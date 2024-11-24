@@ -82,7 +82,7 @@ RUN decide_arch() { \
       printf -- '%s\n' \
         "Building for arch: ${2}|${ARCH}, downloading ${arg1} from: ${url}, expecting ${arg1} SHA256: ${expected}" && \
       rm -rf "${file}" && \
-      curl --disable --output "${file}" --clobber --location --dump-header - --no-progress-meter --url "${url}" && \
+      curl --disable --output "${file}" --clobber --location --no-progress-meter --url "${url}" && \
       verify_download "${expected}" "${file}" ; \
     } && \
   export ARCH="$(decide_arch)" && \
@@ -208,7 +208,8 @@ RUN set -x && \
 # Append software versions
 RUN set -x && \
   /usr/local/bin/ffmpeg -version && \
-  FFMPEG_VERSION=$(set -o pipefail ; /usr/local/bin/ffmpeg -version | head -n 1 | awk '{ print $3 }' || exit) && \
+  FFMPEG_VERSION=$(/usr/local/bin/ffmpeg -version | awk '1 == NR && "ffmpeg" == $1 { print $3; exit 0; } END { exit 1; }') && \
+  test -n "${FFMPEG_VERSION}" && \
   printf -- "ffmpeg_version = '%s'\n" "${FFMPEG_VERSION}" >> /app/common/third_party_versions.py
 
 # Copy root
