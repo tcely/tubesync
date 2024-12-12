@@ -1,0 +1,4 @@
+Media:
+- thumbpath
+- nfopath
+- filepath
