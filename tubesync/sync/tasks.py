@@ -136,7 +136,7 @@ def cleanup_completed_tasks():
 
 def cleanup_old_media():
     for source in Source.objects.filter(delete_old_media=True, days_to_keep__gt=0):
-        delta = timezone.now() - timedelta(days=source.days_to_keep)
+        delta = source.days_to_keep_date
         for media in source.media_source.filter(downloaded=True, download_date__lt=delta):
             log.info(f'Deleting expired media: {source} / {media} '
                      f'(now older than {source.days_to_keep} days / '
