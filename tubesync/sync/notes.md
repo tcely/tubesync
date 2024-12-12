@@ -17,10 +17,12 @@ Metadata mappings:
 'duration': 'duration',
 'formats': 'formats',
 'categories': 'categories',
-'rating': 'average_rating',
-'age_limit': 'age_limit',
 'uploader': 'uploader',
 'upvotes': 'like_count',
+
+# no actual values in my db
+'rating': 'average_rating',
+'age_limit': 'age_limit',
 'downvotes': 'dislike_count',
 'playlist_title': 'playlist_title',
 }
