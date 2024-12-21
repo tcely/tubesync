@@ -27,3 +27,7 @@ Metadata mappings:
 'playlist_title': 'playlist_title',
 }
 ```
+
+
+Because of an optimization the signal isn't always triggered, see 'delete' at: https://docs.djangoproject.com/en/3.2/_modules/django/db/models/deletion/
+
