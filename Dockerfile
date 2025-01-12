@@ -195,7 +195,7 @@ RUN set -eu ; \
     cd /downloaded ; \
     for f in *.sha256 ; \
     do \
-      "${CHECKSUM_ALGORITHM}sum" -cw --binary --strict "${f}" || exit ; \
+      "${CHECKSUM_ALGORITHM}sum" --check --warn --strict "${f}" || exit ; \
       ln -v "${f%.sha256}" /verified/ || exit ; \
     done ; \
     unset -v f ; \
