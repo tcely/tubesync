@@ -105,16 +105,11 @@ COPY --from=ffmpeg-download /verified /verified
 ARG FFMPEG_PREFIX_FILE
 ARG FFMPEG_SUFFIX_FILE
 ARG TARGETARCH
-RUN set -eu ; \
-    apk --no-cache --no-progress add cmd:tar cmd:xz ; \
-\
+RUN set -eux ; \
     mkdir -v /extracted ; \
     cd /extracted ; \
-    set -x ; \
-    tar -xp \
+    tar -xop \
       --strip-components=2 \
-      --no-anchored \
-      --no-same-owner \
       -f "/verified/${TARGETARCH}"/"${FFMPEG_PREFIX_FILE}"*"${FFMPEG_SUFFIX_FILE}" \
       'ffmpeg' 'ffprobe' ; \
 \
@@ -152,13 +147,18 @@ ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 ##ADD --checksum="${S6_CHECKSUM_ARM64}" "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
 ##ADD --checksum="${S6_CHECKSUM_NOARCH}" "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
 
+# --checksum wasn't recognized, so use busybox to check the sums instead
 ADD "${S6_OVERLAY_URL}/${S6_FILE_AMD64}" "${DESTDIR}/"
-ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
-ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
+RUN set -eu ; checksum="${S6_CHECKSUM_AMD64}" ; file="${S6_FILE_AMD64}" ; cd "${DESTDIR}/" && \
+    printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
 
-RUN checksum="${S6_CHECKSUM_AMD64}" file="${S6_FILE_AMD64}" ; set -eu ; cd "${DESTDIR}/" && printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -c
-RUN checksum="${S6_CHECKSUM_ARM64}" file="${S6_FILE_ARM64}" ; set -eu ; cd "${DESTDIR}/" && printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -c
-RUN checksum="${S6_CHECKSUM_NOARCH}" file="${S6_FILE_NOARCH}" ; set -eu ; cd "${DESTDIR}/" && printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -c
+ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
+RUN set -eu ; checksum="${S6_CHECKSUM_ARM64}" ; file="${S6_FILE_ARM64}" ; cd "${DESTDIR}/" && \
+    printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
+
+ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
+RUN set -eu ; checksum="${S6_CHECKSUM_NOARCH}" ; file="${S6_FILE_NOARCH}" ; cd "${DESTDIR}/" && \
+    printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
 
 FROM alpine:${ALPINE_VERSION} AS s6-overlay-extracted
 COPY --from=s6-overlay-download /downloaded /downloaded
@@ -180,11 +180,12 @@ RUN set -eu ; \
       unset -v arg1 ; \
     } ; \
 \
+    apk --no-cache --no-progress add "cmd:${CHECKSUM_ALGORITHM}sum" ; \
     mkdir -v /verified ; \
     cd /downloaded ; \
     for f in *.sha256 ; \
     do \
-      sha256sum -c < "${f}" || exit ; \
+      "${CHECKSUM_ALGORITHM}sum" -cw --binary --strict "${f}" || exit ; \
       ln -v "${f%.sha256}" /verified/ || exit ; \
     done ; \
     unset -v f ; \
