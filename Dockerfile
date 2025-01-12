@@ -76,7 +76,7 @@ RUN set -eu ; \
       --summary-interval=0 \
       --input-file /tmp/downloads ; \
 \
-    apk --no-cache --no-progress add cmd:awk "cmd:${CHECKSUM_ALGORITHM}sum" ; \
+    apk --no-cache --no-progress add "cmd:${CHECKSUM_ALGORITHM}sum" ; \
 \    
     decide_expected() { \
         case "${TARGETARCH}" in \
@@ -91,9 +91,9 @@ RUN set -eu ; \
     if [ -n "${FFMPEG_HASH}" ] ; \
     then \
         printf -- '%s *%s\n' "${FFMPEG_HASH}" "${FFMPEG_PREFIX_FILE}"*-"${FFMPEG_ARCH}"-*"${FFMPEG_SUFFIX_FILE}" >> /tmp/SUMS ; \
-        "${CHECKSUM_ALGORITHM}sum" --check --strict /tmp/SUMS || exit ; \
+        "${CHECKSUM_ALGORITHM}sum" --check --warn --strict /tmp/SUMS || exit ; \
     fi ; \
-    "${CHECKSUM_ALGORITHM}sum" --check --strict --ignore-missing "${DESTDIR}/${FFMPEG_FILE_SUMS}" ; \
+    "${CHECKSUM_ALGORITHM}sum" --check --warn --strict --ignore-missing "${DESTDIR}/${FFMPEG_FILE_SUMS}" ; \
 \
     mkdir -v -p "/verified/${TARGETARCH}" ; \
     ln -v "${FFMPEG_PREFIX_FILE}"*-"${FFMPEG_ARCH}"-*"${FFMPEG_SUFFIX_FILE}" "/verified/${TARGETARCH}/" ; \
@@ -108,10 +108,12 @@ ARG TARGETARCH
 RUN set -eux ; \
     mkdir -v /extracted ; \
     cd /extracted ; \
+    ln -s "/verified/${TARGETARCH}"/"${FFMPEG_PREFIX_FILE}"*"${FFMPEG_SUFFIX_FILE}" "/tmp/ffmpeg${FFMPEG_SUFFIX_FILE}" ; \
+    tar -tf "/tmp/ffmpeg${FFMPEG_SUFFIX_FILE}" | grep '/bin/\(ffmpeg\|ffprobe\)' > /tmp/files ; \
     tar -xop \
       --strip-components=2 \
-      -f "/verified/${TARGETARCH}"/"${FFMPEG_PREFIX_FILE}"*"${FFMPEG_SUFFIX_FILE}" \
-      'ffmpeg' 'ffprobe' ; \
+      -f "/tmp/ffmpeg${FFMPEG_SUFFIX_FILE}" \
+      -T /tmp/files ; \
 \
     ls -AlR /extracted ;
 
