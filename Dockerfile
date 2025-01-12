@@ -11,7 +11,7 @@ ARG SHA256_S6_ARM64="8b22a2eaca4bf0b27a43d36e65c89d2701738f628d1abd0cea5569619f6
 ARG SHA256_S6_NOARCH="6dbcde158a3e78b9bb141d7bcb5ccb421e563523babbe2c64470e76f4fd02dae"
 
 ARG ALPINE_VERSION="latest"
-ARG FFMPEG_PREFIX_FILE='ffmpeg-${FFMPEG_VERSION%%-*}'
+ARG FFMPEG_PREFIX_FILE="ffmpeg-${FFMPEG_VERSION}"
 ARG FFMPEG_SUFFIX_FILE=".tar.xz"
 
 FROM alpine:${ALPINE_VERSION} AS ffmpeg-download
@@ -57,6 +57,7 @@ RUN set -eu ; \
     } ; \
 \
     FFMPEG_ARCH="$(decide_arch)" ; \
+    FFMPEG_PREFIX_FILE="$( printf -- '%s' "${FFMPEG_PREFIX_FILE}" | cut -d '-' -f 1,2 )" ; \
     for url in $(awk ' \
       $2 ~ /^[*]?'"${FFMPEG_PREFIX_FILE}"'/ && /-'"${FFMPEG_ARCH}"'-/ { $1=""; print; } \
       ' "${DESTDIR}/${FFMPEG_FILE_SUMS}") ; \
