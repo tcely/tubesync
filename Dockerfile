@@ -122,7 +122,7 @@ RUN set -eu ; \
 FROM scratch AS ffmpeg
 COPY --from=ffmpeg-extracted /extracted /usr/local/bin/
 
-FROM scratch AS s6-overlay-download
+FROM alpine:${ALPINE_VERSION} AS s6-overlay-download
 ARG S6_VERSION
 ARG SHA256_S6_AMD64
 ARG SHA256_S6_ARM64
@@ -147,12 +147,20 @@ ADD "${S6_OVERLAY_URL}/${S6_FILE_AMD64}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM64}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 
-ADD --checksum="${S6_CHECKSUM_AMD64}" "${S6_OVERLAY_URL}/${S6_FILE_AMD64}" "${DESTDIR}/"
-ADD --checksum="${S6_CHECKSUM_ARM64}" "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
-ADD --checksum="${S6_CHECKSUM_NOARCH}" "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
+##ADD --checksum="${S6_CHECKSUM_AMD64}" "${S6_OVERLAY_URL}/${S6_FILE_AMD64}" "${DESTDIR}/"
+##ADD --checksum="${S6_CHECKSUM_ARM64}" "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
+##ADD --checksum="${S6_CHECKSUM_NOARCH}" "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
+
+ADD "${S6_OVERLAY_URL}/${S6_FILE_AMD64}" "${DESTDIR}/"
+ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
+ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
+
+RUN checksum="${S6_CHECKSUM_AMD64}" file="${S6_FILE_AMD64}" ; set -eu ; cd "${DESTDIR}/" && printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -c
+RUN checksum="${S6_CHECKSUM_ARM64}" file="${S6_FILE_ARM64}" ; set -eu ; cd "${DESTDIR}/" && printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -c
+RUN checksum="${S6_CHECKSUM_NOARCH}" file="${S6_FILE_NOARCH}" ; set -eu ; cd "${DESTDIR}/" && printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -c
 
 FROM alpine:${ALPINE_VERSION} AS s6-overlay-extracted
-COPY --link --from=s6-overlay-download /downloaded /downloaded
+COPY --from=s6-overlay-download /downloaded /downloaded
 
 ARG TARGETARCH
 
