@@ -99,7 +99,7 @@ RUN set -eu ; \
     rm -rf "${DESTDIR}" ;
 
 FROM alpine:${ALPINE_VERSION} AS ffmpeg-extracted
-COPY --link --from=ffmpeg-download /verified /verified
+COPY --from=ffmpeg-download /verified /verified
 
 ARG FFMPEG_PREFIX_FILE
 ARG FFMPEG_SUFFIX_FILE
@@ -118,6 +118,9 @@ RUN set -eu ; \
       'ffmpeg' 'ffprobe' ; \
 \
     ls -AlR /extracted ;
+
+FROM scratch AS ffmpeg
+COPY --from=ffmpeg-extracted /extracted /usr/local/bin/
 
 FROM scratch AS s6-overlay-download
 ARG S6_VERSION
@@ -191,6 +194,9 @@ RUN set -eu ; \
     set +x ; \
     unset -v f ;
 
+FROM scratch AS s6-overlay
+COPY --from=s6-overlay-extracted /s6-overlay-rootfs /
+
 FROM debian:bookworm-slim AS tubesync
 
 ARG TARGETARCH
@@ -214,8 +220,8 @@ ENV DEBIAN_FRONTEND="noninteractive" \
   S6_CMD_WAIT_FOR_SERVICES_MAXTIME="0"
 
 # Install third party software
-COPY --link --from=s6-overlay-extracted /s6-overlay-rootfs /
-COPY --link --from=ffmpeg-extracted /extracted /usr/local/bin/
+COPY --from=s6-overlay / /
+COPY --from=ffmpeg /usr/local/bin/ /usr/local/bin/
 
 # Reminder: the SHELL handles all variables
 RUN set -x && \
