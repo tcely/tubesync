@@ -246,12 +246,8 @@ def download_media(url, media_format, extension, output_file, info_json,
     })
 
     # clean-up incompatible keys
-    remove_keys = set()
-    for key in pp_opts.keys():
-        if key.startswith('_'):
-            remove_keys.add(key)
-    for key in remove_keys:
-        del pp_opts[key]
+    pp_opts = {k: v for k, v in pp_opts.items() if not k.startswith('_')}
+
     # convert dict to namedtuple
     yt_dlp_opts = namedtuple('yt_dlp_opts', pp_opts)
     pp_opts = yt_dlp_opts(**pp_opts)
