@@ -218,8 +218,6 @@ def download_media(url, media_format, extension, output_file, info_json,
         'addmetadata': embed_metadata,
         'addchapters': True,
         'embed_infojson': False,
-        'sponsorblock_mark': set(),
-        'sponsorblock_remove': set(),
     })
 
     ytopts = {
