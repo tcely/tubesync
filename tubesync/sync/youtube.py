@@ -210,13 +210,13 @@ def download_media(url, media_format, extension, output_file, info_json,
             log.warn(f'[youtube-dl] unknown event: {str(event)}')
 
     hook.download_progress = 0
-    pp_opt = namedtuple('pp_opt', (options,))
-    pp_opts = pp_opt({
+    pp_opts = {
         'embedthumbnail': embed_thumbnail,
         'addmetadata': embed_metadata,
         'addchapters': True,
         'embed_infojson': False,
-    })
+    }
+
     ytopts = {
         'format': media_format,
         'merge_output_format': extension,
@@ -252,6 +252,9 @@ def download_media(url, media_format, extension, output_file, info_json,
     if skip_sponsors:
         ytopts['postprocessors'].append(sbopt)
     ytopts['postprocessors'].append(ffmdopt)
+
+    yt_dlp_opts = namedtuple('yt_dlp_opts', pp_opts.keys())
+    pp_opts = yt_dlp_opts(*pp_opts)
     ytopts['postprocessors'] = list(yt_dlp.get_postprocessors(pp_opts))
 
     opts.update(ytopts)
