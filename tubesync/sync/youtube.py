@@ -218,6 +218,7 @@ def download_media(url, media_format, extension, output_file, info_json,
         'addmetadata': embed_metadata,
         'addchapters': True,
         'embed_infojson': False,
+        'force_keyframes_at_cuts': True,
     })
 
     if skip_sponsors:
