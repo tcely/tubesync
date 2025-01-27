@@ -220,6 +220,10 @@ def download_media(url, media_format, extension, output_file, info_json,
         'embed_infojson': False,
     })
 
+    if skip_sponsors:
+        pp_opts['sponsorblock_mark'].update('all,-chapter'.split(','))
+        pp_opts['sponsorblock_remove'].update(sponsor_categories or {})
+
     ytopts = {
         'format': media_format,
         'merge_output_format': extension,
@@ -240,12 +244,18 @@ def download_media(url, media_format, extension, output_file, info_json,
         'home': os.path.dirname(output_file),
     })
 
-    if skip_sponsors:
-        pp_opts.sponsorblock_mark.update('all,-chapter'.split(','))
-        pp_opts.sponsorblock_remove.update(sponsor_categories or {})
+    # clean-up incompatible keys
+    remove_keys = set()
+    for key in pp_opts.keys():
+        if key.startswith('_'):
+            remove_keys.add(key)
+    for key in remove_keys:
+        del pp_opts[key]
+    # convert dict to namedtuple
+    yt_dlp_opts = namedtuple('yt_dlp_opts', pp_opts)
+    pp_opts = yt_dlp_opts(**pp_opts)
 
-    yt_dlp_opts = namedtuple('yt_dlp_opts', p_opts.keys())
-    pp_opts = yt_dlp_opts(*pp_opts)
+    # create the post processors list
     ytopts['postprocessors'] = list(yt_dlp.get_postprocessors(pp_opts))
 
     opts.update(ytopts)
