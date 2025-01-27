@@ -8,7 +8,7 @@ import os
 
 from collections import namedtuple
 from common.logger import log
-from copy import copy
+from copy import copy, deepcopy
 from pathlib import Path
 
 from django.conf import settings
@@ -210,12 +210,17 @@ def download_media(url, media_format, extension, output_file, info_json,
             log.warn(f'[youtube-dl] unknown event: {str(event)}')
 
     hook.download_progress = 0
-    pp_opts = {
+
+    default_opts = yt_dlp.parse_options([]).options
+    pp_opts = deepcopy(default_opts.__dict__)
+    pp_opts.update({
         'embedthumbnail': embed_thumbnail,
         'addmetadata': embed_metadata,
         'addchapters': True,
         'embed_infojson': False,
-    }
+        'sponsorblock_mark': set(),
+        'sponsorblock_remove': set(),
+    })
 
     ytopts = {
         'format': media_format,
@@ -231,29 +236,17 @@ def download_media(url, media_format, extension, output_file, info_json,
         'writeautomaticsub': auto_subtitles,
         'subtitleslangs': sub_langs.split(','),
     }
-    if not sponsor_categories:
-        sponsor_categories = []
-    sbopt = {
-        'key': 'SponsorBlock',
-        'categories': sponsor_categories
-    }
-    ffmdopt = {
-        'key': 'FFmpegMetadata',
-        'add_chapters': embed_metadata,
-        'add_metadata': embed_metadata
-    }
     opts = get_yt_opts()
     ytopts['paths'] = opts.get('paths', {})
     ytopts['paths'].update({
         'home': os.path.dirname(output_file),
     })
-    if embed_thumbnail:
-        ytopts['postprocessors'].append({'key': 'EmbedThumbnail'})
-    if skip_sponsors:
-        ytopts['postprocessors'].append(sbopt)
-    ytopts['postprocessors'].append(ffmdopt)
 
-    yt_dlp_opts = namedtuple('yt_dlp_opts', pp_opts.keys())
+    if skip_sponsors:
+        pp_opts.sponsorblock_mark.update('all,-chapter'.split(','))
+        pp_opts.sponsorblock_remove.update(sponsor_categories or {})
+
+    yt_dlp_opts = namedtuple('yt_dlp_opts', p_opts.keys())
     pp_opts = yt_dlp_opts(*pp_opts)
     ytopts['postprocessors'] = list(yt_dlp.get_postprocessors(pp_opts))
 
