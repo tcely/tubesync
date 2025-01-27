@@ -5,10 +5,13 @@
 
 
 import os
-from pathlib import Path
-from django.conf import settings
-from copy import copy
+
+from collections import namedtuple
 from common.logger import log
+from copy import copy
+from pathlib import Path
+
+from django.conf import settings
 import yt_dlp
 
 
@@ -207,6 +210,13 @@ def download_media(url, media_format, extension, output_file, info_json,
             log.warn(f'[youtube-dl] unknown event: {str(event)}')
 
     hook.download_progress = 0
+    pp_opt = namedtuple('pp_opt', (options,))
+    pp_opts = pp_opt({
+        'embedthumbnail': embed_thumbnail,
+        'addmetadata': embed_metadata,
+        'addchapters': True,
+        'embed_infojson': False,
+    })
     ytopts = {
         'format': media_format,
         'merge_output_format': extension,
@@ -242,6 +252,8 @@ def download_media(url, media_format, extension, output_file, info_json,
     if skip_sponsors:
         ytopts['postprocessors'].append(sbopt)
     ytopts['postprocessors'].append(ffmdopt)
+    ytopts['postprocessors'] = list(yt_dlp.get_postprocessors(pp_opts))
+
     opts.update(ytopts)
 
     with yt_dlp.YoutubeDL(opts) as y:
