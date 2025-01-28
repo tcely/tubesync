@@ -400,15 +400,27 @@ def download_media(media_id):
                      f'the source has a download cap and the media is now too old, '
                      f'not downloading')
             return
+    if media.download_date:
+        # Media has been marked as downloading before the download_media task was fired,
+        # skip it
+        log.warn(f'Download task triggered for media: {media} (UUID: {media.pk}) but '
+                 f'it has already been marked as downloading, this new task has ended')
+        return
+    # Mark this media as currently being downloaded
+    media.download_date = timezone.now()
+    media.save()
     filepath = media.filepath
     log.info(f'Downloading media: {media} (UUID: {media.pk}) to: "{filepath}"')
     format_str, container = media.download_media()
-    if os.path.exists(filepath):
+    # This potentially took a long time, fetch db changes
+    media.refresh_from_db()
+    if filepath.exists():
         # Media has been downloaded successfully
         log.info(f'Successfully downloaded media: {media} (UUID: {media.pk}) to: '
                  f'"{filepath}"')
         # Link the media file to the object and update info about the download
-        media.media_file.name = str(media.source.type_directory_path / media.filename)
+        relative_filepath = filepath.relative_to(media.media_file.storage.location)
+        media.media_file.name = str(relative_filepath)
         media.downloaded = True
         media.download_date = timezone.now()
         media.downloaded_filesize = os.path.getsize(filepath)
@@ -467,6 +479,10 @@ def download_media(media_id):
                 remove_existing_tasks=True
             )
     else:
+        # Mark this media as no longer downloading
+        # The next task needs to try again
+        media.download_date = None
+        media.save()
         # Expected file doesn't exist on disk
         err = (f'Failed to download media: {media} (UUID: {media.pk}) to disk, '
                f'expected outfile does not exist: {filepath}')
