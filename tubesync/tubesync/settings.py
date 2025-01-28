@@ -177,12 +177,20 @@ COOKIES_FILE = CONFIG_BASE_DIR / 'cookies.txt'
 MEDIA_FORMATSTR_DEFAULT = '{yyyy_mm_dd}_{source}_{title}_{key}_{format}.{ext}'
 
 
+RENAME_ALL_SOURCES = False
+RENAME_SOURCES = None
+
+
 try:
     from .local_settings import *
 except ImportError as e:
     import sys
     sys.stderr.write(f'Unable to import local_settings: {e}\n')
     sys.exit(1)
+
+
+if BACKGROUND_TASK_ASYNC_THREADS > MAX_BACKGROUND_TASK_ASYNC_THREADS:
+    BACKGROUND_TASK_ASYNC_THREADS = MAX_BACKGROUND_TASK_ASYNC_THREADS
 
 
 from .dbutils import patch_ensure_connection
