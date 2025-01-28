@@ -48,13 +48,15 @@ def source_post_save(sender, instance, created, **kwargs):
         verbose_name = _('Check download directory exists for source "{}"')
         check_source_directory_exists(
             str(instance.pk),
+            queue=str(instance.pk),
             priority=0,
             verbose_name=verbose_name.format(instance.name)
         )
         if instance.source_type != Source.SOURCE_TYPE_YOUTUBE_PLAYLIST and instance.copy_channel_images:
             download_source_images(
                 str(instance.pk),
-                priority=0,
+                queue=str(instance.pk),
+                priority=1,
                 verbose_name=verbose_name.format(instance.name)
             )
         if instance.index_schedule > 0:
@@ -69,19 +71,31 @@ def source_post_save(sender, instance, created, **kwargs):
                 verbose_name=verbose_name.format(instance.name),
                 remove_existing_tasks=True
             )
-    verbose_name = _('Renaming all media for source "{}"')
-    rename_all_media_for_source(
-        str(instance.pk),
-        priority=0,
-        verbose_name=verbose_name.format(instance.name),
-        remove_existing_tasks=True
+    # Check settings before any rename tasks are scheduled
+    rename_sources_setting = settings.RENAME_SOURCES or []
+    create_rename_task = (
+        (
+            instance.directory and
+            instance.directory in rename_sources_setting
+        ) or
+        settings.RENAME_ALL_SOURCES
     )
+    if create_rename_task:
+        verbose_name = _('Renaming all media for source "{}"')
+        rename_all_media_for_source(
+            str(instance.pk),
+            queue=str(instance.pk),
+            priority=1,
+            verbose_name=verbose_name.format(instance.name),
+            remove_existing_tasks=False
+        )
     verbose_name = _('Checking all media for source "{}"')
     save_all_media_for_source(
         str(instance.pk),
-        priority=1,
+        queue=str(instance.pk),
+        priority=2,
         verbose_name=verbose_name.format(instance.name),
-        remove_existing_tasks=True
+        remove_existing_tasks=False
     )
 
 
@@ -176,7 +190,7 @@ def media_post_save(sender, instance, created, **kwargs):
         instance.downloaded = False
         instance.media_file = None
     if (not instance.downloaded and instance.can_download and not instance.skip
-        and instance.source.download_media):
+        and instance.source.download_media and instance.download_date is None):
         delete_task_by_media('sync.tasks.download_media', (str(instance.pk),))
         verbose_name = _('Downloading media for "{}"')
         download_media(
