@@ -12,12 +12,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
 from django.conf import settings
-from django.test import TestCase, Client
+from django.test import TestCase, Client, override_settings
 from django.utils import timezone
 from background_task.models import Task
 from .models import Source, Media
 from .tasks import cleanup_old_media
 from .filtering import filter_media
+from .utils import filter_response
 
 
 class FrontEndTestCase(TestCase):
@@ -171,6 +172,8 @@ class FrontEndTestCase(TestCase):
         response = c.get('/source-add')
         self.assertEqual(response.status_code, 200)
         # Create a new source
+        data_categories = ('sponsor', 'preview',)
+        expected_categories = ['sponsor', 'preview']
         data = {
             'source_type': 'c',
             'key': 'testkey',
@@ -189,6 +192,7 @@ class FrontEndTestCase(TestCase):
             'prefer_60fps': False,
             'prefer_hdr': False,
             'fallback': 'f',
+            'sponsorblock_categories': data_categories,
             'sub_langs': 'en',
         }
         response = c.post('/source-add', data)
@@ -202,6 +206,9 @@ class FrontEndTestCase(TestCase):
         source_uuid = path_parts[1]
         source = Source.objects.get(pk=source_uuid)
         self.assertEqual(str(source.pk), source_uuid)
+        # Check that the SponsorBlock categories were saved
+        self.assertEqual(source.sponsorblock_categories.selected_choices,
+                         expected_categories)
         # Check a task was created to index the media for the new source
         source_uuid = str(source.pk)
         task = Task.objects.get_task('sync.tasks.index_source_task',
@@ -214,6 +221,13 @@ class FrontEndTestCase(TestCase):
         # Check the source detail page loads
         response = c.get(f'/source/{source_uuid}')
         self.assertEqual(response.status_code, 200)
+        # save and refresh the Source
+        source.refresh_from_db()
+        source.save()
+        source.refresh_from_db()
+        # Check that the SponsorBlock categories remain saved
+        self.assertEqual(source.sponsorblock_categories.selected_choices,
+                         expected_categories)
         # Update the source key
         data = {
             'source_type': Source.SOURCE_TYPE_YOUTUBE_CHANNEL,
@@ -233,6 +247,7 @@ class FrontEndTestCase(TestCase):
             'prefer_60fps': False,
             'prefer_hdr': False,
             'fallback': Source.FALLBACK_FAIL,
+            'sponsorblock_categories': data_categories,
             'sub_langs': 'en',
         }
         response = c.post(f'/source-update/{source_uuid}', data)
@@ -246,6 +261,10 @@ class FrontEndTestCase(TestCase):
         source_uuid = path_parts[1]
         source = Source.objects.get(pk=source_uuid)
         self.assertEqual(source.key, 'updatedkey')
+        # Check that the SponsorBlock categories remain saved
+        source.refresh_from_db()
+        self.assertEqual(source.sponsorblock_categories.selected_choices,
+                         expected_categories)
         # Update the source index schedule which should recreate the scheduled task
         data = {
             'source_type': Source.SOURCE_TYPE_YOUTUBE_CHANNEL,
@@ -265,6 +284,7 @@ class FrontEndTestCase(TestCase):
             'prefer_60fps': False,
             'prefer_hdr': False,
             'fallback': Source.FALLBACK_FAIL,
+            'sponsorblock_categories': data_categories,
             'sub_langs': 'en',
         }
         response = c.post(f'/source-update/{source_uuid}', data)
@@ -277,6 +297,9 @@ class FrontEndTestCase(TestCase):
         self.assertEqual(path_parts[0], 'source')
         source_uuid = path_parts[1]
         source = Source.objects.get(pk=source_uuid)
+        # Check that the SponsorBlock categories remain saved
+        self.assertEqual(source.sponsorblock_categories.selected_choices,
+                         expected_categories)
         # Check a new task has been created by seeing if the pk has changed
         new_task = Task.objects.get_task('sync.tasks.index_source_task',
                                          args=(source_uuid,))[0]
@@ -597,11 +620,11 @@ class FilepathTestCase(TestCase):
         # Check child directories work
         self.source.media_format = '{yyyy}/{key}.{ext}'
         self.assertEqual(self.media.directory_path,
-                         str(self.source.directory_path / '2017'))
+                         self.source.directory_path / '2017')
         self.assertEqual(self.media.filename, '2017/mediakey.mkv')
         self.source.media_format = '{yyyy}/{yyyy_mm_dd}/{key}.{ext}'
         self.assertEqual(self.media.directory_path,
-                         str(self.source.directory_path / '2017/2017-09-11'))
+                         self.source.directory_path / '2017/2017-09-11')
         self.assertEqual(self.media.filename, '2017/2017-09-11/mediakey.mkv')
         # Check media specific media format keys work
         test_media = Media.objects.create(
@@ -1707,6 +1730,85 @@ class FormatMatchingTestCase(TestCase):
                 expected_match_result,
                 msg=f'Media title "{self.media.title}" checked against regex "{self.source.filter_text}" failed '
                     f'expected {expected_match_result}')
+
+
+class ResponseFilteringTestCase(TestCase):
+
+    def setUp(self):
+        # Disable general logging for test case
+        logging.disable(logging.CRITICAL)
+        # Add a test source
+        self.source = Source.objects.create(
+            source_type=Source.SOURCE_TYPE_YOUTUBE_CHANNEL,
+            key='testkey',
+            name='testname',
+            directory='testdirectory',
+            index_schedule=3600,
+            delete_old_media=False,
+            days_to_keep=14,
+            source_resolution=Source.SOURCE_RESOLUTION_1080P,
+            source_vcodec=Source.SOURCE_VCODEC_VP9,
+            source_acodec=Source.SOURCE_ACODEC_OPUS,
+            prefer_60fps=False,
+            prefer_hdr=False,
+            fallback=Source.FALLBACK_FAIL
+        )
+        # Add some media
+        self.media = Media.objects.create(
+            key='mediakey',
+            source=self.source,
+            metadata='{}'
+        )
+
+    @override_settings(SHRINK_OLD_MEDIA_METADATA=False, SHRINK_NEW_MEDIA_METADATA=False)
+    def test_metadata_20230629(self):
+        self.media.metadata = all_test_metadata['20230629']
+        self.media.save()
+
+        unfiltered = self.media.loaded_metadata
+        filtered = filter_response(self.media.loaded_metadata)
+        self.assertIn('formats', unfiltered.keys())
+        self.assertIn('formats', filtered.keys())
+        # filtered 'downloader_options'
+        self.assertIn('downloader_options', unfiltered['formats'][10].keys())
+        self.assertNotIn('downloader_options', filtered['formats'][10].keys())
+        # filtered 'http_headers'
+        self.assertIn('http_headers', unfiltered['formats'][0].keys())
+        self.assertNotIn('http_headers', filtered['formats'][0].keys())
+        # did not lose any formats
+        self.assertEqual(48, len(unfiltered['formats']))
+        self.assertEqual(48, len(filtered['formats']))
+        self.assertEqual(len(unfiltered['formats']), len(filtered['formats']))
+        # did not remove everything with url
+        self.assertIn('original_url', unfiltered.keys())
+        self.assertIn('original_url', filtered.keys())
+        self.assertEqual(unfiltered['original_url'], filtered['original_url'])
+        # did reduce the size of the metadata
+        self.assertTrue(len(str(filtered)) < len(str(unfiltered)))
+
+        url_keys = []
+        for format in unfiltered['formats']:
+            for key in format.keys():
+                if 'url' in key:
+                    url_keys.append((format['format_id'], key, format[key],))
+        unfiltered_url_keys = url_keys
+        self.assertEqual(63, len(unfiltered_url_keys), msg=str(unfiltered_url_keys))
+
+        url_keys = []
+        for format in filtered['formats']:
+            for key in format.keys():
+                if 'url' in key:
+                    url_keys.append((format['format_id'], key, format[key],))
+        filtered_url_keys = url_keys
+        self.assertEqual(3, len(filtered_url_keys), msg=str(filtered_url_keys))
+
+        url_keys = []
+        for lang_code, captions in filtered['automatic_captions'].items():
+            for caption in captions:
+                for key in caption.keys():
+                    if 'url' in key:
+                        url_keys.append((lang_code, caption['ext'], caption[key],))
+        self.assertEqual(0, len(url_keys), msg=str(url_keys))
 
 
 class TasksTestCase(TestCase):
