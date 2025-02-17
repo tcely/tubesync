@@ -620,22 +620,11 @@ def rename_all_media_for_source(source_id):
 
 @background(schedule=0, remove_existing_tasks=True)
 def wait_for_media_premiere(media_id):
-    hours = lambda td: 1+int((24*td.days)+(td.seconds/(60*60)))
-
     try:
         media = Media.objects.get(pk=media_id)
     except Media.DoesNotExist:
         return
-    if media.metadata:
+    if not media.wait_for_premiere:
         return
-    now = timezone.now()
-    if media.published < now:
-        media.manual_skip = False
-        media.skip = False
-        # start the download tasks
-        media.save()
-    else:
-        media.manual_skip = True
-        media.title = _(f'Premieres in {hours(media.published - now)} hours')
-        media.save()
+    media.save()
 
