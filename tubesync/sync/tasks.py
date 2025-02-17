@@ -464,7 +464,7 @@ def download_media(media_id):
         # Media has been downloaded successfully
         log.info(f'Successfully downloaded media: {media} (UUID: {media.pk}) to: '
                  f'"{filepath}"')
-        media.finish_download(filepath)
+        media.finish_download(format_str, container, filepath)
         media.save()
         # If selected, copy the thumbnail over as well
         if media.source.copy_thumbnails:
