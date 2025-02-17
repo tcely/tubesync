@@ -1357,6 +1357,47 @@ class Media(models.Model):
         # Return the download paramaters
         return format_str, self.source.extension
 
+
+    def finish_download(self, downloaded_filepath=None):
+        if downloaded_filepath is None:
+            downloaded_filepath = self.filename
+        filepath = Path(downloaded_filepath)
+        # Link the downloaded file to the object and update info about the download
+        self.media_file.name = str(self.source.type_directory_path / filepath)
+        self.downloaded = True
+        self.download_date = timezone.now()
+        self.downloaded_filesize = os.path.getsize(self.filepath)
+        self.downloaded_container = container
+        if '+' in format_str:
+            # Seperate audio and video streams
+            vformat_code, aformat_code = format_str.split('+')
+            aformat = self.get_format_by_code(aformat_code)
+            vformat = self.get_format_by_code(vformat_code)
+            self.downloaded_format = vformat['format']
+            self.downloaded_height = vformat['height']
+            self.downloaded_width = vformat['width']
+            self.downloaded_audio_codec = aformat['acodec']
+            self.downloaded_video_codec = vformat['vcodec']
+            self.downloaded_container = container
+            self.downloaded_fps = vformat['fps']
+            self.downloaded_hdr = vformat['is_hdr']
+        else:
+            # Combined stream or audio-only stream
+            cformat_code = format_str
+            cformat = self.get_format_by_code(cformat_code)
+            self.downloaded_audio_codec = cformat['acodec']
+            if cformat['vcodec']:
+                # Combined
+                self.downloaded_format = cformat['format']
+                self.downloaded_height = cformat['height']
+                self.downloaded_width = cformat['width']
+                self.downloaded_video_codec = cformat['vcodec']
+                self.downloaded_fps = cformat['fps']
+                self.downloaded_hdr = cformat['is_hdr']
+            else:
+                self.downloaded_format = Val(SourceResolution.AUDIO)
+
+
     def index_metadata(self):
         '''
             Index the media metadata returning a dict of info.
