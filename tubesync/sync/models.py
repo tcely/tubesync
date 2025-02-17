@@ -1473,6 +1473,24 @@ class Media(models.Model):
                         pass
 
 
+    @property
+    def wait_for_premiere(self):
+        hours = lambda td: 1+int((24*td.days)+(td.seconds/(60*60)))
+
+        if self.has_metadata or not self.published:
+            return False
+
+        now = timezone.now()
+        if self.published < now:
+            self.manual_skip = False
+            self.skip = False
+        else:
+            self.manual_skip = True
+            self.title = _(f'Premieres in {hours(self.published - now)} hours')
+
+        return True
+
+
 class MediaServer(models.Model):
     '''
         A remote media server, such as a Plex server.
