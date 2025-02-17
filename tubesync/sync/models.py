@@ -1505,7 +1505,6 @@ class Media(models.Model):
         return True
 
 
-    @property
     def wait_for_premiere(self):
         hours = lambda td: 1+int((24*td.days)+(td.seconds/(60*60)))
 
