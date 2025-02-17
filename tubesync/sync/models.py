@@ -1358,15 +1358,15 @@ class Media(models.Model):
         return format_str, self.source.extension
 
 
-    def finish_download(self, downloaded_filepath=None):
+    def finish_download(self, format_str, container, downloaded_filepath=None):
         if downloaded_filepath is None:
-            downloaded_filepath = self.filename
+            downloaded_filepath = self.filepath
         filepath = Path(downloaded_filepath)
         # Link the downloaded file to the object and update info about the download
-        self.media_file.name = str(self.source.type_directory_path / filepath)
+        self.media_file.name = str(filepath.relative_to(self.media_file.storage.location))
         self.downloaded = True
         self.download_date = timezone.now()
-        self.downloaded_filesize = os.path.getsize(self.filepath)
+        self.downloaded_filesize = os.path.getsize(filepath)
         self.downloaded_container = container
         if '+' in format_str:
             # Seperate audio and video streams
