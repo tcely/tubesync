@@ -1,7 +1,8 @@
-import os
-import uuid
 import json
+import os
 import re
+import uuid
+from io import BytesIO
 from xml.etree import ElementTree
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from django.conf import settings
 from django.db import models
 from django.core.exceptions import SuspiciousOperation
 from django.core.files.storage import FileSystemStorage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.validators import RegexValidator
 from django.utils.text import slugify
 from django.utils import timezone
@@ -21,7 +23,8 @@ from .youtube import (get_media_info as get_youtube_media_info,
                       download_media as download_youtube_media,
                       get_channel_image_info as get_youtube_channel_image_info)
 from .utils import (seconds_to_timestr, parse_media_format, filter_response,
-                    write_text_file, mkdir_p, directory_and_stem, glob_quote)
+                    write_text_file, mkdir_p, directory_and_stem, glob_quote,
+                    get_remote_image, resize_image_to_height)
 from .matching import (get_best_combined_format, get_best_audio_format,
                        get_best_video_format)
 from .mediaservers import PlexMediaServer
@@ -1471,6 +1474,35 @@ class Media(models.Model):
                             parent_dir = parent_dir.parent
                     except OSError as e:
                         pass
+
+
+    def save_thumbnail(self, url=None):
+        if self.skip:
+            return
+        if url is None:
+            url = self.thumbnail
+        if not url:
+            return
+        width = getattr(settings, 'MEDIA_THUMBNAIL_WIDTH', 430)
+        height = getattr(settings, 'MEDIA_THUMBNAIL_HEIGHT', 240)
+        i = get_remote_image(url)
+        log.info(f'Resizing {i.width}x{i.height} thumbnail to '
+                 f'{width}x{height}: {url}')
+        i = resize_image_to_height(i, width, height)
+        image_file = BytesIO()
+        i.save(image_file, 'JPEG', quality=85, optimize=True, progressive=True)
+        image_file.seek(0)
+        self.thumb.save(
+            'thumb',
+            SimpleUploadedFile(
+                'thumb',
+                image_file.read(),
+                'image/jpeg',
+            ),
+            save=True
+        )
+        log.info(f'Saved thumbnail for: {self} from: {url}')
+        return True
 
 
     @property
