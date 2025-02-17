@@ -417,26 +417,7 @@ def download_media_thumbnail(media_id, url):
         log.warn(f'Download task triggered for media: {media} (UUID: {media.pk}) but '
                  f'it is now marked to be skipped, not downloading thumbnail')
         return
-    width = getattr(settings, 'MEDIA_THUMBNAIL_WIDTH', 430)
-    height = getattr(settings, 'MEDIA_THUMBNAIL_HEIGHT', 240)
-    i = get_remote_image(url)
-    log.info(f'Resizing {i.width}x{i.height} thumbnail to '
-             f'{width}x{height}: {url}')
-    i = resize_image_to_height(i, width, height)
-    image_file = BytesIO()
-    i.save(image_file, 'JPEG', quality=85, optimize=True, progressive=True)
-    image_file.seek(0)
-    media.thumb.save(
-        'thumb',
-        SimpleUploadedFile(
-            'thumb',
-            image_file.read(),
-            'image/jpeg',
-        ),
-        save=True
-    )
-    log.info(f'Saved thumbnail for: {media} from: {url}')
-    return True
+    return media.save_thumbnail(url)
 
 
 @background(schedule=0)
@@ -624,7 +605,7 @@ def wait_for_media_premiere(media_id):
         media = Media.objects.get(pk=media_id)
     except Media.DoesNotExist:
         return
-    if not media.wait_for_premiere:
+    if not media.wait_for_premiere():
         return
     media.save()
 
