@@ -15,7 +15,6 @@ from shutil import copyfile
 from PIL import Image
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from django.db.utils import IntegrityError
 from django.utils.translation import gettext_lazy as _
@@ -25,7 +24,7 @@ from common.logger import log
 from common.errors import NoMediaException, DownloadFailedException
 from common.utils import json_serial
 from .models import Source, Media, MediaServer
-from .utils import (get_remote_image, resize_image_to_height, delete_file,
+from .utils import (get_remote_image, delete_file,
                     write_text_file, filter_response)
 from .youtube import YouTubeError
 
