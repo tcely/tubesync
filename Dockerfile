@@ -370,8 +370,8 @@ RUN set -x && \
 COPY config/root /
 
 # patch background_task
-COPY patches/background_task/ \
-    /usr/local/lib/python3/dist-packages/background_task/
+ADD https://github.com/tcely/django-background-tasks/raw/refs/heads/tcely-1.2.8/background_task/models.py \
+    /usr/local/lib/python3/dist-packages/background_task/models.py
 
 # patch yt_dlp
 COPY patches/yt_dlp/ \
