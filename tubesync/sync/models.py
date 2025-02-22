@@ -24,7 +24,6 @@ from .utils import (seconds_to_timestr, parse_media_format, filter_response,
                     write_text_file, mkdir_p, directory_and_stem, glob_quote)
 from .matching import (get_best_combined_format, get_best_audio_format,
                        get_best_video_format)
-from .mediaservers import (JellyfinMediaServer, PlexMediaServer)
 from .fields import CommaSepChoiceField
 from .choices import (Val, CapChoices, Fallback, FileExtension,
                         FilterSeconds, IndexSchedule, MediaServerType,
@@ -1503,10 +1502,7 @@ class MediaServer(models.Model):
         Val(MediaServerType.JELLYFIN): '<i class="fas fa-server"></i>',
         Val(MediaServerType.PLEX): '<i class="fas fa-server"></i>',
     }
-    HANDLERS = {
-        Val(MediaServerType.JELLYFIN): JellyfinMediaServer,
-        Val(MediaServerType.PLEX): PlexMediaServer,
-    }
+    HANDLERS = MediaServerType.handlers_dict()
 
     server_type = models.CharField(
         _('server type'),
