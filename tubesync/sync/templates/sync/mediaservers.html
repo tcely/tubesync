@@ -16,11 +16,13 @@
 </div>
 {% include 'infobox.html' with message=message %}
 {% for name in types_obj.names %}
+{% with mst=types_obj[name] server_type_long=types_obj.long_types().get(types_obj[name].value) %}
 <div class="row">
   <div class="col s12 margin-bottom">
-    <a href="{% url 'sync:add-mediaserver' server_type=types_obj.long_types().get(types_obj[name].value) %}" class="btn">Add a {{ types_obj[name].label }} media server <i class="fas fa-server"></i></a>
+    <a href="{% url 'sync:add-mediaserver' server_type=server_type_long %}" class="btn">Add a {{ mst.label }} media server <i class="fas fa-server"></i></a>
   </div>
 </div>
+{% endwith %}
 {% endfor %}
 <div class="row no-margin-bottom">
   <div class="col s12">
