@@ -3,6 +3,8 @@ from django.utils.translation import gettext_lazy as _
 
 from copy import deepcopy
 
+from .forms import (JellyfinMediaServerForm, PlexMediaServerForm)
+
 
 DOMAINS = dict({
     'youtube': frozenset({
@@ -65,8 +67,28 @@ class IndexSchedule(models.IntegerChoices):
 
 
 class MediaServerType(models.TextChoices):
-    PLEX = 'p', _('Plex')
     JELLYFIN = 'j', _('Jellyfin')
+    PLEX = 'p', _('Plex')
+
+    @classmethod
+    def long_types(cls):
+        return dict(zip(
+            (
+                'jellyfin',
+                'plex',
+            ),
+            cls.values,
+        ))
+
+    @classmethod
+    def forms_dict(cls):
+        return dict(zip(
+            cls.values,
+            (
+                JellyfinMediaServerForm,
+                PlexMediaServerForm,
+            ),
+        ))
 
 
 class MediaState(models.TextChoices):
