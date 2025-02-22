@@ -25,7 +25,7 @@ from common.utils import append_uri_params
 from background_task.models import Task, CompletedTask
 from .models import Source, Media, MediaServer
 from .forms import (ValidateSourceForm, ConfirmDeleteSourceForm, RedownloadMediaForm,
-                    SkipMediaForm, EnableMediaForm, ResetTasksForm, PlexMediaServerForm,
+                    SkipMediaForm, EnableMediaForm, ResetTasksForm,
                     ConfirmDeleteMediaServerForm)
 from .utils import validate_url, delete_file
 from .tasks import (map_task_to_instance, get_error_message,
@@ -912,15 +912,9 @@ class AddMediaServerView(FormView):
     '''
 
     template_name = 'sync/mediaserver-add.html'
-    server_types = {
-        'jellyfin': Val(MediaServerType.JELLYFIN),
-        'plex': Val(MediaServerType.PLEX),
-    }
+    server_types = MediaServerType.long_types()
     server_type_names = dict(MediaServerType.choices)
-    forms = {
-        Val(MediaServerType.JELLYFIN): JellyfinMediaServerForm,
-        Val(MediaServerType.PLEX): PlexMediaServerForm,
-    }
+    forms = MediaServerType.forms_dict()
 
     def __init__(self, *args, **kwargs):
         self.server_type = None
@@ -1035,10 +1029,7 @@ class UpdateMediaServerView(FormView, SingleObjectMixin):
 
     template_name = 'sync/mediaserver-update.html'
     model = MediaServer
-    forms = {
-        Val(MediaServerType.JELLYFIN): JellyfinMediaServerForm,
-        Val(MediaServerType.PLEX): PlexMediaServerForm,
-    }
+    forms = MediaServerType.forms_dict()
 
     def __init__(self, *args, **kwargs):
         self.object = None
