@@ -71,10 +71,7 @@ class MediaServerType(models.TextChoices):
     @classmethod
     def long_types(cls):
         return dict(zip(
-            (
-                'jellyfin',
-                'plex',
-            ),
+            list(map(str.lower, cls.names)),
             cls.values,
         ))
 
