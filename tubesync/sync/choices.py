@@ -71,7 +71,7 @@ class MediaServerType(models.TextChoices):
     @classmethod
     def long_types(cls):
         return dict(zip(
-            list(map(str.lower, cls.names)),
+            list(map(cls.lower, cls.names)),
             cls.values,
         ))
 
