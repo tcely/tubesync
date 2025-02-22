@@ -1530,7 +1530,7 @@ class MediaServer(models.Model):
     )
     verify_https = models.BooleanField(
         _('verify https'),
-        default=True
+        default=True,
         help_text=_('If connecting over HTTPS, verify the SSL certificate is valid')
     )
     options = models.TextField(
