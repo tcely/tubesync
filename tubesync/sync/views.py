@@ -883,6 +883,7 @@ class MediaServersView(ListView):
 
     template_name = 'sync/mediaservers.html'
     context_object_name = 'mediaservers'
+    types_object = MediaServerType
     messages = {
         'deleted': _('Your selected media server has been deleted.'),
     }
@@ -902,6 +903,7 @@ class MediaServersView(ListView):
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
         data['message'] = self.message
+        data['types_obj'] = self.types_object
         return data
 
 
@@ -969,6 +971,7 @@ class AddMediaServerView(FormView):
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
         data['server_type'] = self.server_type
+        data['server_type_long'] = self.server_types.get(self.server_type)
         data['server_type_name'] = self.server_type_names.get(self.server_type)
         data['server_help'] = self.model_class.get_help_html()
         return data
