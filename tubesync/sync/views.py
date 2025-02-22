@@ -930,6 +930,8 @@ class AddMediaServerView(FormView):
         if not self.server_type:
             raise Http404
         self.form_class = self.forms.get(self.server_type)
+        if not self.form_class:
+            raise Http404
         self.model_class = MediaServer(server_type=self.server_type)
         return super().dispatch(request, *args, **kwargs)
 
