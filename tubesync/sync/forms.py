@@ -74,7 +74,7 @@ class JellyfinMediaServerForm(forms.Form):
         label=_(f'{_media_server_type_label} token'),
         required=True,
     )
-    libraries = forms.TextField(
+    libraries = forms.CharField(
         label=_(f'Comma-separated list of {_media_server_type_label} library IDs to update'),
         required=False,
     )
