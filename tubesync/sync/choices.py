@@ -111,7 +111,7 @@ class MediaServerType(models.TextChoices):
         return rd
 
     @classmethod
-    def members(cls):
+    def members_list(cls):
         return list(cls.__members__.values())
 
 
