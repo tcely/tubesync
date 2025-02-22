@@ -25,7 +25,7 @@ from common.utils import append_uri_params
 from background_task.models import Task, CompletedTask
 from .models import Source, Media, MediaServer
 from .forms import (ValidateSourceForm, ConfirmDeleteSourceForm, RedownloadMediaForm,
-                    SkipMediaForm, EnableMediaForm, ResetTasksForm, PlexMediaServerForm,
+                    SkipMediaForm, EnableMediaForm, ResetTasksForm,
                     ConfirmDeleteMediaServerForm)
 from .utils import validate_url, delete_file
 from .tasks import (map_task_to_instance, get_error_message,
@@ -893,7 +893,7 @@ class MediaServersView(ListView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return MediaServer.objects.all().order_by('host')
+        return MediaServer.objects.all().order_by('host', 'port')
 
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
@@ -908,13 +908,9 @@ class AddMediaServerView(FormView):
     '''
 
     template_name = 'sync/mediaserver-add.html'
-    server_types = {
-        'plex': Val(MediaServerType.PLEX),
-    }
+    server_types = MediaServerType.long_types()
     server_type_names = dict(MediaServerType.choices)
-    forms = {
-        Val(MediaServerType.PLEX): PlexMediaServerForm,
-    }
+    forms = MediaServerType.forms_dict()
 
     def __init__(self, *args, **kwargs):
         self.server_type = None
@@ -1029,9 +1025,7 @@ class UpdateMediaServerView(FormView, SingleObjectMixin):
 
     template_name = 'sync/mediaserver-update.html'
     model = MediaServer
-    forms = {
-        Val(MediaServerType.PLEX): PlexMediaServerForm,
-    }
+    forms = MediaServerType.forms_dict()
 
     def __init__(self, *args, **kwargs):
         self.object = None

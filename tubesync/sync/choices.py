@@ -65,7 +65,43 @@ class IndexSchedule(models.IntegerChoices):
 
 
 class MediaServerType(models.TextChoices):
+    JELLYFIN = 'j', _('Jellyfin')
     PLEX = 'p', _('Plex')
+
+    @classmethod
+    def long_types(cls):
+        return dict(zip(
+            list(map(cls.lower, cls.names)),
+            cls.values,
+        ))
+
+    @classmethod
+    def forms_dict(cls):
+        from .forms import (
+            JellyfinMediaServerForm,
+            PlexMediaServerForm,
+        )
+        return dict(zip(
+            cls.values,
+            (
+                JellyfinMediaServerForm,
+                PlexMediaServerForm,
+            ),
+        ))
+
+    @classmethod
+    def handlers_dict(cls):
+        from .mediaservers import (
+            JellyfinMediaServer,
+            PlexMediaServer,
+        )
+        return dict(zip(
+            cls.values,
+            (
+                JellyfinMediaServer,
+                PlexMediaServer,
+            ),
+        ))
 
 
 class MediaState(models.TextChoices):
