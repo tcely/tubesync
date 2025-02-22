@@ -24,3 +24,4 @@ redis = "*"
 hiredis = "*"
 requests = {extras = ["socks"], version = "*"}
 emoji = "*"
+classutilities = "*"
