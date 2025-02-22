@@ -78,6 +78,10 @@ class MediaServerType(models.TextChoices):
         rd.update(d)
         return rd
 
+    @property
+    def long_type(self):
+        return self.long_types().get(self.value)
+
     @classmethod
     def obj_from_name(cls, name):
         return cls.__getattr__(name)
