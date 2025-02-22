@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from copy import deepcopy
 
 from .forms import (JellyfinMediaServerForm, PlexMediaServerForm)
+from .mediaservers import (JellyfinMediaServer, PlexMediaServer)
 
 
 DOMAINS = dict({
@@ -87,6 +88,16 @@ class MediaServerType(models.TextChoices):
             (
                 JellyfinMediaServerForm,
                 PlexMediaServerForm,
+            ),
+        ))
+
+    @classmethod
+    def handlers_dict(cls):
+        return dict(zip(
+            cls.values,
+            (
+                JellyfinMediaServer,
+                PlexMediaServer,
             ),
         ))
 
