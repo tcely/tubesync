@@ -897,7 +897,7 @@ class MediaServersView(ListView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return MediaServer.objects.all().order_by('host')
+        return MediaServer.objects.all().order_by('host', 'port')
 
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
@@ -913,10 +913,12 @@ class AddMediaServerView(FormView):
 
     template_name = 'sync/mediaserver-add.html'
     server_types = {
+        'jellyfin': Val(MediaServerType.JELLYFIN),
         'plex': Val(MediaServerType.PLEX),
     }
     server_type_names = dict(MediaServerType.choices)
     forms = {
+        Val(MediaServerType.JELLYFIN): JellyfinMediaServerForm,
         Val(MediaServerType.PLEX): PlexMediaServerForm,
     }
 
@@ -1034,6 +1036,7 @@ class UpdateMediaServerView(FormView, SingleObjectMixin):
     template_name = 'sync/mediaserver-update.html'
     model = MediaServer
     forms = {
+        Val(MediaServerType.JELLYFIN): JellyfinMediaServerForm,
         Val(MediaServerType.PLEX): PlexMediaServerForm,
     }
 
