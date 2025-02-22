@@ -79,6 +79,18 @@ class MediaServerType(models.TextChoices):
         return rd
 
     @classmethod
+    def obj_from_name(cls, name):
+        return cls.__getattr__(name)
+
+    @classmethod
+    def obj_from_value(cls, value):
+        matching_obj = None
+        for n, o in cls.__members__.items():
+            if o.value == value:
+                matching_obj = n
+        return matching_obj
+
+    @classmethod
     def forms_dict(cls):
         from .forms import (
             JellyfinMediaServerForm,

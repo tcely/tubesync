@@ -16,7 +16,7 @@
 </div>
 {% include 'infobox.html' with message=message %}
 {% for name in types_obj.names %}
-{% with mst=types_obj.__getattr__(name) long_types=types_obj.long_types() %}
+{% with mst=types_obj.obj_from_name(name) long_types=types_obj.long_types() %}
 <div class="row">
   <div class="col s12 margin-bottom">
     <a href="{% url 'sync:add-mediaserver' server_type=long_types.get(mst.value) %}" class="btn">Add a {{ mst.label }} media server <i class="fas fa-server"></i></a>
