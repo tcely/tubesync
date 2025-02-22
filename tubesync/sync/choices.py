@@ -70,10 +70,13 @@ class MediaServerType(models.TextChoices):
 
     @classmethod
     def long_types(cls):
-        return dict(zip(
+        d = dict(zip(
             list(map(cls.lower, cls.names)),
             cls.values,
         ))
+        rd = dict(zip( d.values(), d.keys() ))
+        rd.update(d)
+        return rd
 
     @classmethod
     def forms_dict(cls):
