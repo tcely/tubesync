@@ -903,7 +903,7 @@ class MediaServersView(ListView):
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
         data['message'] = self.message
-        data['media_server_types'] = self.types_object.members()
+        data['media_server_types'] = self.types_object.members_list()
         return data
 
 
