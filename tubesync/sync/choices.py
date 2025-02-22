@@ -69,32 +69,6 @@ class MediaServerType(models.TextChoices):
     PLEX = 'p', _('Plex')
 
     @classmethod
-    def long_types(cls):
-        d = dict(zip(
-            list(map(cls.lower, cls.names)),
-            cls.values,
-        ))
-        rd = dict(zip( d.values(), d.keys() ))
-        rd.update(d)
-        return rd
-
-    @property
-    def long_type(self):
-        return self.long_types().get(self.value)
-
-    @classmethod
-    def obj_from_name(cls, name):
-        return cls.__getattr__(name)
-
-    @classmethod
-    def obj_from_value(cls, value):
-        matching_obj = None
-        for n, o in cls.__members__.items():
-            if o.value == value:
-                matching_obj = n
-        return matching_obj
-
-    @classmethod
     def forms_dict(cls):
         from .forms import (
             JellyfinMediaServerForm,
@@ -121,6 +95,24 @@ class MediaServerType(models.TextChoices):
                 PlexMediaServer,
             ),
         ))
+
+    @property
+    def long_type(self):
+        return self.long_types().get(self.value)
+
+    @classmethod
+    def long_types(cls):
+        d = dict(zip(
+            list(map(cls.lower, cls.names)),
+            cls.values,
+        ))
+        rd = dict(zip( d.values(), d.keys() ))
+        rd.update(d)
+        return rd
+
+    @classmethod
+    def members(cls):
+        return list(cls.__members__.values())
 
 
 class MediaState(models.TextChoices):
