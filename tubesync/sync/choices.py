@@ -66,6 +66,7 @@ class IndexSchedule(models.IntegerChoices):
 
 class MediaServerType(models.TextChoices):
     PLEX = 'p', _('Plex')
+    JELLYFIN = 'j', _('Jellyfin')
 
 
 class MediaState(models.TextChoices):
