@@ -96,6 +96,15 @@ class MediaServerType(models.TextChoices):
             ),
         ))
 
+    @classmethod
+    def icons_dict(cls):
+        return dict(zip(
+            cls.values,
+            (
+                '<i class="fas fa-server"></i>',
+            ) * len(cls.values),
+        ))
+ 
     @property
     def long_type(self):
         return self.long_types().get(self.value)
