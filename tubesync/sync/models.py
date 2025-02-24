@@ -546,6 +546,9 @@ class Media(models.Model):
         Source.
     '''
 
+    # Used to convert seconds to datetime
+    posix_epoch = datetime(1970, 1, 1, tzinfo=tz.utc)
+
     # Format to use to display a URL for the media
     URLS = _srctype_dict('https://www.youtube.com/watch?v={key}')
 
@@ -770,6 +773,7 @@ class Media(models.Model):
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         # Trigger an update of derived fields from metadata
         if self.metadata:
+            setattr(self, '_cached_metadata_dict', None)
             self.title = self.metadata_title[:200]
             self.duration = self.metadata_duration
         if update_fields is not None and "metadata" in update_fields:
@@ -882,14 +886,19 @@ class Media(models.Model):
                 resolution = self.downloaded_format.lower()
             elif self.downloaded_height:
                 resolution = f'{self.downloaded_height}p'
+            if resolution:
+                fmt.append(resolution)
             if self.downloaded_format != Val(SourceResolution.AUDIO):
                 vcodec = self.downloaded_video_codec.lower()
+            if vcodec:
                 fmt.append(vcodec)
             acodec = self.downloaded_audio_codec.lower()
-            fmt.append(acodec)
+            if acodec:
+                fmt.append(acodec)
             if self.downloaded_format != Val(SourceResolution.AUDIO):
                 fps = str(self.downloaded_fps)
-                fmt.append(f'{fps}fps')
+                if fps:
+                    fmt.append(f'{fps}fps')
                 if self.downloaded_hdr:
                     hdr = 'hdr'
                     fmt.append(hdr)
@@ -921,13 +930,19 @@ class Media(models.Model):
                 # Combined
                 vformat = cformat
         if vformat:
-            resolution = vformat['format'].lower()
-            fmt.append(resolution)
+            if vformat['format']:
+                resolution = vformat['format'].lower()
+            else:
+                resolution = f"{vformat['height']}p"
+            if resolution:
+                fmt.append(resolution)
             vcodec = vformat['vcodec'].lower()
-            fmt.append(vcodec)
+            if vcodec:
+                fmt.append(vcodec)
         if aformat:
             acodec = aformat['acodec'].lower()
-            fmt.append(acodec)
+            if acodec:
+                fmt.append(acodec)
         if vformat:
             if vformat['is_60fps']:
                 fps = '60fps'
@@ -999,20 +1014,28 @@ class Media(models.Model):
     @property
     def reduce_data(self):
         try:
-            from common.logger import log
-            from common.utils import json_serial
-
-            old_mdl = len(self.metadata or "")
             data = json.loads(self.metadata or "{}")
+            if '_reduce_data_ran_at' in data.keys():
+                total_seconds = data['_reduce_data_ran_at']
+                ran_at = posix_epoch + timedelta(seconds=total_seconds)
+                if (timezone.now() - ran_at) < timedelta(hours=1):
+                    return data
+
+            from common.utils import json_serial
             compact_json = json.dumps(data, separators=(',', ':'), default=json_serial)
 
             filtered_data = filter_response(data, True)
+            filtered_data['_reduce_data_ran_at'] = round((timezone.now() - posix_epoch).total_seconds())
             filtered_json = json.dumps(filtered_data, separators=(',', ':'), default=json_serial)
         except Exception as e:
+            from common.logger import log
             log.exception('reduce_data: %s', e)
         else:
+            from common.logger import log
+            log.debug(f'reduce_data: running for: {self.source.name} / {self.key}')
             # log the results of filtering / compacting on metadata size
             new_mdl = len(compact_json)
+            old_mdl = len(self.metadata or "")
             if old_mdl > new_mdl:
                 delta = old_mdl - new_mdl
                 log.info(f'{self.key}: metadata compacted by {delta:,} characters ({old_mdl:,} -> {new_mdl:,})')
@@ -1022,16 +1045,25 @@ class Media(models.Model):
                 log.info(f'{self.key}: metadata reduced by {delta:,} characters ({old_mdl:,} -> {new_mdl:,})')
                 if getattr(settings, 'SHRINK_OLD_MEDIA_METADATA', False):
                     self.metadata = filtered_json
+                    return filtered_data
+            return data
 
 
     @property
     def loaded_metadata(self):
+        data = None
         if getattr(settings, 'SHRINK_OLD_MEDIA_METADATA', False):
-            self.reduce_data
+            data = self.reduce_data
         try:
-            data = json.loads(self.metadata)
+            if not data:
+                cached = getattr(self, '_cached_metadata_dict', None)
+                if cached:
+                    data = cached
+                else:
+                    data = json.loads(self.metadata or "{}")
             if not isinstance(data, dict):
                 return {}
+            setattr(self, '_cached_metadata_dict', data)
             return data
         except Exception as e:
             return {}
@@ -1099,7 +1131,6 @@ class Media(models.Model):
         if timestamp is not None:
             try:
                 timestamp_float = float(timestamp)
-                posix_epoch = datetime(1970, 1, 1, tzinfo=tz.utc)
                 published_dt = posix_epoch + timedelta(seconds=timestamp_float)
             except Exception as e:
                 log.warn(f'Could not compute published from timestamp for: {self.source} / {self} with "{e}"')
@@ -1513,6 +1544,8 @@ class Media(models.Model):
                         old_file_str = other_path.name
                         new_file_str = new_stem + old_file_str[len(old_stem):]
                         new_file_path = Path(new_prefix_path / new_file_str)
+                        if new_file_path == other_path:
+                            continue
                         log.debug(f'Considering replace for: {self!s}\n\t{other_path!s}\n\t{new_file_path!s}')
                         # it should exist, but check anyway 
                         if other_path.exists():
@@ -1524,6 +1557,8 @@ class Media(models.Model):
                         old_file_str = fuzzy_path.name
                         new_file_str = new_stem + old_file_str[len(fuzzy_stem):]
                         new_file_path = Path(new_prefix_path / new_file_str)
+                        if new_file_path == fuzzy_path:
+                            continue
                         log.debug(f'Considering rename for: {self!s}\n\t{fuzzy_path!s}\n\t{new_file_path!s}')
                         # it quite possibly was renamed already
                         if fuzzy_path.exists() and not new_file_path.exists():
@@ -1537,8 +1572,9 @@ class Media(models.Model):
 
                     # try to remove empty dirs
                     parent_dir = old_video_path.parent
+                    stop_dir = self.source.directory_path
                     try:
-                        while parent_dir.is_dir():
+                        while parent_dir.is_relative_to(stop_dir):
                             parent_dir.rmdir()
                             log.info(f'Removed empty directory: {parent_dir!s}')
                             parent_dir = parent_dir.parent

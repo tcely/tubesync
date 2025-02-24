@@ -90,10 +90,11 @@ class DashboardView(TemplateView):
         data['database_connection'] = settings.DATABASE_CONNECTION_STR
         # Add the database filesize when using db.sqlite3
         data['database_filesize'] = None
-        db_name = str(connection.get_connection_params()['database'])
-        db_path = pathlib.Path(db_name) if '/' == db_name[0] else None
-        if db_path and 'sqlite' == connection.vendor:
-            data['database_filesize'] = db_path.stat().st_size
+        if 'sqlite' == connection.vendor:
+            db_name = str(connection.get_connection_params().get('database', ''))
+            db_path = pathlib.Path(db_name) if '/' == db_name[0] else None
+            if db_path:
+                data['database_filesize'] = db_path.stat().st_size
         return data
 
 
@@ -121,6 +122,9 @@ class SourcesView(ListView):
                 str(sobj.pk),
                 queue=str(sobj.pk),
                 repeat=0,
+                priority=10,
+                schedule=30,
+                remove_existing_tasks=False,
                 verbose_name=verbose_name.format(sobj.name))
             url = reverse_lazy('sync:sources')
             url = append_uri_params(url, {'message': 'source-refreshed'})
@@ -495,8 +499,9 @@ class MediaThumbView(DetailView):
 
     def get(self, request, *args, **kwargs):
         media = self.get_object()
-        if media.thumb:
-            thumb = open(media.thumb.path, 'rb').read()
+        if media.thumb_file_exists:
+            thumb_path = pathlib.Path(media.thumb.path)
+            thumb = thumb_path.read_bytes()
             content_type = 'image/jpeg' 
         else:
             # No thumbnail on disk, return a blank 1x1 gif
@@ -860,7 +865,7 @@ class ResetTasks(FormView):
                 str(source.pk),
                 repeat=source.index_schedule,
                 queue=str(source.pk),
-                priority=5,
+                priority=10,
                 verbose_name=verbose_name.format(source.name)
             )
             # This also chains down to call each Media objects .save() as well
