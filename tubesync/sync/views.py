@@ -25,7 +25,7 @@ from common.utils import append_uri_params
 from background_task.models import Task, CompletedTask
 from .models import Source, Media, MediaServer
 from .forms import (ValidateSourceForm, ConfirmDeleteSourceForm, RedownloadMediaForm,
-                    SkipMediaForm, EnableMediaForm, ResetTasksForm, PlexMediaServerForm,
+                    SkipMediaForm, EnableMediaForm, ResetTasksForm,
                     ConfirmDeleteMediaServerForm)
 from .utils import validate_url, delete_file
 from .tasks import (map_task_to_instance, get_error_message,
@@ -90,10 +90,11 @@ class DashboardView(TemplateView):
         data['database_connection'] = settings.DATABASE_CONNECTION_STR
         # Add the database filesize when using db.sqlite3
         data['database_filesize'] = None
-        db_name = str(connection.get_connection_params()['database'])
-        db_path = pathlib.Path(db_name) if '/' == db_name[0] else None
-        if db_path and 'sqlite' == connection.vendor:
-            data['database_filesize'] = db_path.stat().st_size
+        if 'sqlite' == connection.vendor:
+            db_name = str(connection.get_connection_params().get('database', ''))
+            db_path = pathlib.Path(db_name) if '/' == db_name[0] else None
+            if db_path:
+                data['database_filesize'] = db_path.stat().st_size
         return data
 
 
@@ -121,6 +122,9 @@ class SourcesView(ListView):
                 str(sobj.pk),
                 queue=str(sobj.pk),
                 repeat=0,
+                priority=10,
+                schedule=30,
+                remove_existing_tasks=False,
                 verbose_name=verbose_name.format(sobj.name))
             url = reverse_lazy('sync:sources')
             url = append_uri_params(url, {'message': 'source-refreshed'})
@@ -495,8 +499,9 @@ class MediaThumbView(DetailView):
 
     def get(self, request, *args, **kwargs):
         media = self.get_object()
-        if media.thumb:
-            thumb = open(media.thumb.path, 'rb').read()
+        if media.thumb_file_exists:
+            thumb_path = pathlib.Path(media.thumb.path)
+            thumb = thumb_path.read_bytes()
             content_type = 'image/jpeg' 
         else:
             # No thumbnail on disk, return a blank 1x1 gif
@@ -819,13 +824,9 @@ class CompletedTasksView(ListView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return CompletedTask.objects.all().order_by('-run_at')
-
-    def get_queryset(self):
+        q = CompletedTask.objects.all()
         if self.filter_source:
-            q = CompletedTask.objects.filter(queue=str(self.filter_source.pk))
-        else:
-            q = CompletedTask.objects.all()
+            q = q.filter(queue=str(self.filter_source.pk))
         return q.order_by('-run_at')
 
     def get_context_data(self, *args, **kwargs):
@@ -864,7 +865,7 @@ class ResetTasks(FormView):
                 str(source.pk),
                 repeat=source.index_schedule,
                 queue=str(source.pk),
-                priority=5,
+                priority=10,
                 verbose_name=verbose_name.format(source.name)
             )
             # This also chains down to call each Media objects .save() as well
@@ -883,6 +884,7 @@ class MediaServersView(ListView):
 
     template_name = 'sync/mediaservers.html'
     context_object_name = 'mediaservers'
+    types_object = MediaServerType
     messages = {
         'deleted': _('Your selected media server has been deleted.'),
     }
@@ -897,11 +899,12 @@ class MediaServersView(ListView):
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return MediaServer.objects.all().order_by('host')
+        return MediaServer.objects.all().order_by('host', 'port')
 
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
         data['message'] = self.message
+        data['media_server_types'] = self.types_object.members_list()
         return data
 
 
@@ -912,13 +915,9 @@ class AddMediaServerView(FormView):
     '''
 
     template_name = 'sync/mediaserver-add.html'
-    server_types = {
-        'plex': Val(MediaServerType.PLEX),
-    }
+    server_types = MediaServerType.long_types()
     server_type_names = dict(MediaServerType.choices)
-    forms = {
-        Val(MediaServerType.PLEX): PlexMediaServerForm,
-    }
+    forms = MediaServerType.forms_dict()
 
     def __init__(self, *args, **kwargs):
         self.server_type = None
@@ -932,6 +931,8 @@ class AddMediaServerView(FormView):
         if not self.server_type:
             raise Http404
         self.form_class = self.forms.get(self.server_type)
+        if not self.form_class:
+            raise Http404
         self.model_class = MediaServer(server_type=self.server_type)
         return super().dispatch(request, *args, **kwargs)
 
@@ -973,6 +974,7 @@ class AddMediaServerView(FormView):
     def get_context_data(self, *args, **kwargs):
         data = super().get_context_data(*args, **kwargs)
         data['server_type'] = self.server_type
+        data['server_type_long'] = self.server_types.get(self.server_type)
         data['server_type_name'] = self.server_type_names.get(self.server_type)
         data['server_help'] = self.model_class.get_help_html()
         return data
@@ -1033,9 +1035,7 @@ class UpdateMediaServerView(FormView, SingleObjectMixin):
 
     template_name = 'sync/mediaserver-update.html'
     model = MediaServer
-    forms = {
-        Val(MediaServerType.PLEX): PlexMediaServerForm,
-    }
+    forms = MediaServerType.forms_dict()
 
     def __init__(self, *args, **kwargs):
         self.object = None

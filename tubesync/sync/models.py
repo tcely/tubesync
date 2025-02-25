@@ -2,11 +2,12 @@ import json
 import os
 import re
 import uuid
-from io import BytesIO
-from xml.etree import ElementTree
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone as tz
+from io import BytesIO
 from pathlib import Path
+from xml.etree import ElementTree
 from django.conf import settings
 from django.db import models
 from django.core.exceptions import SuspiciousOperation
@@ -27,7 +28,6 @@ from .utils import (seconds_to_timestr, parse_media_format, filter_response,
                     get_remote_image, resize_image_to_height)
 from .matching import (get_best_combined_format, get_best_audio_format,
                        get_best_video_format)
-from .mediaservers import PlexMediaServer
 from .fields import CommaSepChoiceField
 from .choices import (Val, CapChoices, Fallback, FileExtension,
                         FilterSeconds, IndexSchedule, MediaServerType,
@@ -550,6 +550,9 @@ class Media(models.Model):
         Source.
     '''
 
+    # Used to convert seconds to datetime
+    posix_epoch = datetime(1970, 1, 1, tzinfo=tz.utc)
+
     # Format to use to display a URL for the media
     URLS = _srctype_dict('https://www.youtube.com/watch?v={key}')
 
@@ -562,6 +565,7 @@ class Media(models.Model):
         **(_same_name('upload_date')),
         **(_same_name('timestamp')),
         **(_same_name('title')),
+        **(_same_name('fulltitle')),
         **(_same_name('description')),
         **(_same_name('duration')),
         **(_same_name('formats')),
@@ -773,6 +777,7 @@ class Media(models.Model):
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         # Trigger an update of derived fields from metadata
         if self.metadata:
+            setattr(self, '_cached_metadata_dict', None)
             self.title = self.metadata_title[:200]
             self.duration = self.metadata_duration
         if update_fields is not None and "metadata" in update_fields:
@@ -824,6 +829,25 @@ class Media(models.Model):
                 if audio_format and video_format:
                     return f'{video_format}+{audio_format}'
                 else:
+                    # last resort: any combined format
+                    fallback_hd_cutoff = getattr(settings, 'VIDEO_HEIGHT_IS_HD', 500)
+
+                    for fmt in reversed(list(self.iter_formats())):
+                        select_fmt = (
+                            fmt.get('id') and
+                            fmt.get('acodec') and
+                            fmt.get('vcodec') and
+                            self.source.can_fallback and
+                            (
+                                (self.source.fallback == Val(Fallback.NEXT_BEST)) or
+                                (
+                                    self.source.fallback == Val(Fallback.NEXT_BEST_HD) and
+                                    (fmt.get('height') or 0) >= fallback_hd_cutoff
+                                )
+                            )
+                        )
+                        if select_fmt:
+                            return str(fmt.get('id'))
                     return False
         return False
  
@@ -866,14 +890,19 @@ class Media(models.Model):
                 resolution = self.downloaded_format.lower()
             elif self.downloaded_height:
                 resolution = f'{self.downloaded_height}p'
+            if resolution:
+                fmt.append(resolution)
             if self.downloaded_format != Val(SourceResolution.AUDIO):
                 vcodec = self.downloaded_video_codec.lower()
+            if vcodec:
                 fmt.append(vcodec)
             acodec = self.downloaded_audio_codec.lower()
-            fmt.append(acodec)
+            if acodec:
+                fmt.append(acodec)
             if self.downloaded_format != Val(SourceResolution.AUDIO):
                 fps = str(self.downloaded_fps)
-                fmt.append(f'{fps}fps')
+                if fps:
+                    fmt.append(f'{fps}fps')
                 if self.downloaded_hdr:
                     hdr = 'hdr'
                     fmt.append(hdr)
@@ -905,13 +934,19 @@ class Media(models.Model):
                 # Combined
                 vformat = cformat
         if vformat:
-            resolution = vformat['format'].lower()
-            fmt.append(resolution)
+            if vformat['format']:
+                resolution = vformat['format'].lower()
+            else:
+                resolution = f"{vformat['height']}p"
+            if resolution:
+                fmt.append(resolution)
             vcodec = vformat['vcodec'].lower()
-            fmt.append(vcodec)
+            if vcodec:
+                fmt.append(vcodec)
         if aformat:
             acodec = aformat['acodec'].lower()
-            fmt.append(acodec)
+            if acodec:
+                fmt.append(acodec)
         if vformat:
             if vformat['is_60fps']:
                 fps = '60fps'
@@ -982,21 +1017,29 @@ class Media(models.Model):
 
     @property
     def reduce_data(self):
+        now = timezone.now()
         try:
-            from common.logger import log
-            from common.utils import json_serial
-
-            old_mdl = len(self.metadata or "")
             data = json.loads(self.metadata or "{}")
+            if '_reduce_data_ran_at' in data.keys():
+                total_seconds = data['_reduce_data_ran_at']
+                ran_at = self.posix_epoch + timedelta(seconds=total_seconds)
+                if (now - ran_at) < timedelta(hours=1):
+                    return data
+
+            from common.utils import json_serial
             compact_json = json.dumps(data, separators=(',', ':'), default=json_serial)
 
             filtered_data = filter_response(data, True)
+            filtered_data['_reduce_data_ran_at'] = round((now - self.posix_epoch).total_seconds())
             filtered_json = json.dumps(filtered_data, separators=(',', ':'), default=json_serial)
         except Exception as e:
+            from common.logger import log
             log.exception('reduce_data: %s', e)
         else:
+            from common.logger import log
             # log the results of filtering / compacting on metadata size
             new_mdl = len(compact_json)
+            old_mdl = len(self.metadata or "")
             if old_mdl > new_mdl:
                 delta = old_mdl - new_mdl
                 log.info(f'{self.key}: metadata compacted by {delta:,} characters ({old_mdl:,} -> {new_mdl:,})')
@@ -1006,19 +1049,61 @@ class Media(models.Model):
                 log.info(f'{self.key}: metadata reduced by {delta:,} characters ({old_mdl:,} -> {new_mdl:,})')
                 if getattr(settings, 'SHRINK_OLD_MEDIA_METADATA', False):
                     self.metadata = filtered_json
+                    return filtered_data
+            return data
 
 
     @property
     def loaded_metadata(self):
+        cached = getattr(self, '_cached_metadata_dict', None)
+        if cached:
+            return deepcopy(cached)
+        data = None
         if getattr(settings, 'SHRINK_OLD_MEDIA_METADATA', False):
-            self.reduce_data
+            data = self.reduce_data
         try:
-            data = json.loads(self.metadata)
+            if not data:
+                data = json.loads(self.metadata or "{}")
             if not isinstance(data, dict):
                 return {}
+            setattr(self, '_cached_metadata_dict', data)
             return data
         except Exception as e:
             return {}
+
+    @property
+    def refresh_formats(self):
+        data = self.loaded_metadata
+        metadata_seconds = data.get('epoch', None)
+        if not metadata_seconds:
+            self.metadata = None
+            return False
+
+        now = timezone.now()
+        formats_seconds = data.get('formats_epoch', metadata_seconds)
+        metadata_dt = self.metadata_published(formats_seconds)
+        if (now - metadata_dt) < timedelta(seconds=self.source.index_schedule):
+            return False
+
+        self.skip = False
+        metadata = self.index_metadata()
+        if self.skip:
+            return False
+ 
+        response = metadata
+        if getattr(settings, 'SHRINK_NEW_MEDIA_METADATA', False):
+            response = filter_response(metadata, True)
+
+        field = self.get_metadata_field('formats')
+        data[field] = response.get(field, [])
+        if data.get('availability', 'public') != response.get('availability', 'public'):
+            data['availability'] = response.get('availability', 'public')
+        data['formats_epoch'] = response.get('epoch', formats_seconds)
+
+        from common.utils import json_serial
+        compact_json = json.dumps(data, separators=(',', ':'), default=json_serial)
+        self.metadata = compact_json
+        return True
 
     @property
     def url(self):
@@ -1032,8 +1117,27 @@ class Media(models.Model):
 
     @property
     def metadata_title(self):
-        field = self.get_metadata_field('title')
-        return self.loaded_metadata.get(field, '').strip()
+        result = ''
+        for key in ('fulltitle', 'title'):
+            field = self.get_metadata_field(key)
+            value = self.loaded_metadata.get(field, '').strip()
+            if value:
+                result = value
+                break
+        return result
+
+    def metadata_published(self, timestamp=None):
+        published_dt = None
+        if timestamp is None:
+            field = self.get_metadata_field('timestamp')
+            timestamp = self.loaded_metadata.get(field, None)
+        if timestamp is not None:
+            try:
+                timestamp_float = float(timestamp)
+                published_dt = self.posix_epoch + timedelta(seconds=timestamp_float)
+            except Exception as e:
+                log.warn(f'Could not compute published from timestamp for: {self.source} / {self} with "{e}"')
+        return published_dt
 
     @property
     def slugtitle(self):
@@ -1484,6 +1588,8 @@ class Media(models.Model):
                         old_file_str = other_path.name
                         new_file_str = new_stem + old_file_str[len(old_stem):]
                         new_file_path = Path(new_prefix_path / new_file_str)
+                        if new_file_path == other_path:
+                            continue
                         log.debug(f'Considering replace for: {self!s}\n\t{other_path!s}\n\t{new_file_path!s}')
                         # it should exist, but check anyway 
                         if other_path.exists():
@@ -1495,6 +1601,8 @@ class Media(models.Model):
                         old_file_str = fuzzy_path.name
                         new_file_str = new_stem + old_file_str[len(fuzzy_stem):]
                         new_file_path = Path(new_prefix_path / new_file_str)
+                        if new_file_path == fuzzy_path:
+                            continue
                         log.debug(f'Considering rename for: {self!s}\n\t{fuzzy_path!s}\n\t{new_file_path!s}')
                         # it quite possibly was renamed already
                         if fuzzy_path.exists() and not new_file_path.exists():
@@ -1508,8 +1616,9 @@ class Media(models.Model):
 
                     # try to remove empty dirs
                     parent_dir = old_video_path.parent
+                    stop_dir = self.source.directory_path
                     try:
-                        while parent_dir.is_dir():
+                        while parent_dir.is_relative_to(stop_dir):
                             parent_dir.rmdir()
                             log.info(f'Removed empty directory: {parent_dir!s}')
                             parent_dir = parent_dir.parent
@@ -1569,11 +1678,10 @@ class MediaServer(models.Model):
     '''
 
     ICONS = {
+        Val(MediaServerType.JELLYFIN): '<i class="fas fa-server"></i>',
         Val(MediaServerType.PLEX): '<i class="fas fa-server"></i>',
     }
-    HANDLERS = {
-        Val(MediaServerType.PLEX): PlexMediaServer,
-    }
+    HANDLERS = MediaServerType.handlers_dict()
 
     server_type = models.CharField(
         _('server type'),
@@ -1596,17 +1704,17 @@ class MediaServer(models.Model):
     )
     use_https = models.BooleanField(
         _('use https'),
-        default=True,
+        default=False,
         help_text=_('Connect to the media server over HTTPS')
     )
     verify_https = models.BooleanField(
         _('verify https'),
-        default=False,
+        default=True,
         help_text=_('If connecting over HTTPS, verify the SSL certificate is valid')
     )
     options = models.TextField(
         _('options'),
-        blank=True,
+        blank=False, # valid JSON only
         null=True,
         help_text=_('JSON encoded options for the media server')
     )

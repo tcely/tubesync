@@ -7,7 +7,7 @@ verify_ssl = true
 autopep8 = "*"
 
 [packages]
-django = "~=3.2"
+django = "*"
 django-sass-processor = "*"
 libsass = "*"
 pillow = "*"
@@ -15,12 +15,10 @@ whitenoise = "*"
 gunicorn = "*"
 django-compressor = "*"
 httptools = "*"
-django-background-tasks = "*"
+django-background-tasks = ">=1.2.8"
 django-basicauth = "*"
 psycopg2-binary = "*"
 mysqlclient = "*"
 yt-dlp = "*"
-redis = "*"
-hiredis = "*"
 requests = {extras = ["socks"], version = "*"}
 emoji = "*"
