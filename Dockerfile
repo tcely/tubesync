@@ -280,6 +280,8 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
   python3-libsass \
   python3-socks \
   python3-wheel \
+  aria2 \
+  ca-certificates \
   curl \
   less \
   && \
