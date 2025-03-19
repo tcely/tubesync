@@ -56,17 +56,16 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
       - name: Set environment variables with GitHub CLI
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FFMPEG_RELEASES: ${{ steps.ffmpeg.outputs.releases }}
         run: |
-          python3 -m json.tool <<<"${FFMPEG_RELEASES}"
+          jq '.[0:5]' -- <<<"${FFMPEG_RELEASES}"
           {
             # Fetch the latest+1 release from yt-dlp/FFmpeg-Builds
             var='FFMPEG_DATE' ;
             delim='"'"${var}"'_EOF"' ;
-            jq_arg='.[1].tag_name[10:]' ;
             printf -- '%s<<%s\n' "${var}" "${delim}" ;
-            gh api repos/yt-dlp/FFmpeg-Builds/releases --cache 12h --jq "${jq_arg}" ;
+            jq_arg='.[0].date' ;
+            jq -r "${jq_arg}" -- <<<"${FFMPEG_RELEASES}" ;
             printf -- '%s\n' "${delim}" ;
             unset -v delim jq_arg var ;
           } >> "${GITHUB_ENV}"
