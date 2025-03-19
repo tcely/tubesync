@@ -55,16 +55,20 @@ jobs:
             unset -v delim jq_arg var ;
           } >> "${GITHUB_OUTPUT}"
       - name: Set environment variables with GitHub CLI
-        env:
-          FFMPEG_RELEASES: ${{ steps.ffmpeg.outputs.releases }}
         run: |
-          jq '.[0:5]' -- <<<"${FFMPEG_RELEASES}"
+          FFMPEG_RELEASES="$(jq -c '.[0:5]' -- <<<'${{ steps.ffmpeg.outputs.releases }}')"
           {
-            # Fetch the latest+1 release from yt-dlp/FFmpeg-Builds
             var='FFMPEG_DATE' ;
             delim='"'"${var}"'_EOF"' ;
             printf -- '%s<<%s\n' "${var}" "${delim}" ;
             jq_arg='.[0].date' ;
+            jq -r "${jq_arg}" -- <<<"${FFMPEG_RELEASES}" ;
+            printf -- '%s\n' "${delim}" ;
+            
+            var='FFMPEG_VERSION' ;
+            delim='"'"${var}"'_EOF"' ;
+            printf -- '%s<<%s\n' "${var}" "${delim}" ;
+            jq_arg='.[0].versions[]|select(contains("N-"))' ;
             jq -r "${jq_arg}" -- <<<"${FFMPEG_RELEASES}" ;
             printf -- '%s\n' "${delim}" ;
             unset -v delim jq_arg var ;
@@ -97,3 +101,4 @@ jobs:
           build-args: |
             IMAGE_NAME=${{ env.IMAGE_NAME }}
             FFMPEG_DATE=${{ env.FFMPEG_DATE }}
+            FFMPEG_VERSION=${{ env.FFMPEG_VERSION }}
