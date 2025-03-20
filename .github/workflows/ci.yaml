@@ -55,8 +55,6 @@ jobs:
             var='releases' ;
             delim='"'"${var}"'_EOF"' ;
             printf -- '%s<<%s\n' "${var}" "${delim}" ;
-            # jq_arg='[ .[] | select( .tag_name | contains("autobuild-") ) | select( .prerelease == false ) | select( .draft == false ) | { "date": .tag_name[10:], "versions": [ .assets[] | select( .name | contains("ffmpeg-") ) | select( .name | contains("-linux64-") ) | .name[7:(.name | index("-linux64-"))] ], } ]' ;
-            # gh api repos/yt-dlp/FFmpeg-Builds/releases --cache 12h --jq "${jq_arg}" ;
             gh api graphql --cache 12h \
               -F assets="${GH_API_GQL_ASSETS}" \
               -F owner="${GH_API_GQL_OWNER}" \
@@ -90,7 +88,7 @@ jobs:
             var='FFMPEG_VERSION' ;
             delim='"'"${var}"'_EOF"' ;
             printf -- '%s<<%s\n' "${var}" "${delim}" ;
-            jq_arg='.[]|select(.date == $date)|.versions[]|select(contains("N-"))' ;
+            jq_arg='.[]|select(.date == $date)|.versions[]|select(startswith("N-"))' ;
             jq -r --arg date "${ffmpeg_date}" "${jq_arg}" -- .ffmpeg.releases.json ;
             printf -- '%s\n' "${delim}" ;
             unset -v delim jq_arg var ;
