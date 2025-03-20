@@ -77,21 +77,21 @@ jobs:
           cat >| .ffmpeg.releases.json <<'EOF'
           ${{ steps.ffmpeg.outputs.releases }}
           EOF
-          jq_arg='[foreach .[] as $release ([{}, []]; [ .[0] + {($release.commit): ([ $release.date ] + (.[0][($release.commit)] // []) ) }, [ .[1][0] // $release.commit ] ] ; .[0][(.[1][0])] ) ][-1][0]'
-          FFMPEG_RELEASES="$(jq -c '.[0:5]' -- .ffmpeg.releases.json)"
           {
             var='FFMPEG_DATE' ;
             delim='"'"${var}"'_EOF"' ;
             printf -- '%s<<%s\n' "${var}" "${delim}" ;
-            #jq_arg='.[0].date' ;
-            jq -r "${jq_arg}" -- <<<"${FFMPEG_RELEASES}" ;
+            jq_arg='[foreach .[] as $release ([{}, []]; [ .[0] + {($release.commit): ([ $release.date ] + (.[0][($release.commit)] // []) ) }, [ .[1][0] // $release.commit ] ] ; .[0][(.[1][0])] ) ][-1][0]' ;
+            jq -r "${jq_arg}" -- .ffmpeg.releases.json ;
             printf -- '%s\n' "${delim}" ;
+
+            ffmpeg_date="$( jq -r "${jq_arg}" -- .ffmpeg.releases.json )"
             
             var='FFMPEG_VERSION' ;
             delim='"'"${var}"'_EOF"' ;
             printf -- '%s<<%s\n' "${var}" "${delim}" ;
-            jq_arg='.[0].versions[]|select(contains("N-"))' ;
-            jq -r "${jq_arg}" -- <<<"${FFMPEG_RELEASES}" ;
+            jq_arg='.[]|select(.date == $date)|.versions[]|select(contains("N-"))' ;
+            jq -r --arg date "${ffmpeg_date}" "${jq_arg}" -- .ffmpeg.releases.json ;
             printf -- '%s\n' "${delim}" ;
             unset -v delim jq_arg var ;
           } >> "${GITHUB_ENV}"
