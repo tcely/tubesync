@@ -10,6 +10,7 @@ import math
 import uuid
 from io import BytesIO
 from hashlib import sha1
+from pathlib import Path
 from datetime import datetime, timedelta
 from shutil import copyfile, rmtree
 from PIL import Image
@@ -766,7 +767,7 @@ def wait_for_media_premiere(media_id):
         media.save()
 
 @background(schedule=90, remove_existing_tasks=False)
-def delete_all_media_for_source(source_id, source_name, source_directory_path):
+def delete_all_media_for_source(source_id, source_name, source_directory):
     source = None
     try:
         source = Source.objects.get(pk=source_id)
@@ -786,8 +787,15 @@ def delete_all_media_for_source(source_id, source_name, source_directory_path):
             with atomic():
                 media.delete()
     # Remove the directory, if the user requested that
-    directory_path = Path(source_directory_path)
-    if (directory_path / '.to_be_removed').is_file():
+    directory_path = Path(source_directory)
+    remove = (
+        (source and source.delete_removed_media) or
+        (directory_path / '.to_be_removed').is_file()
+    )
+    if source:
+        with atomic(durable=True):
+            source.delete()
+    if remove:
         log.info(f'Deleting directory for: {source_name}: {directory_path}')
         rmtree(directory_path, True)
 

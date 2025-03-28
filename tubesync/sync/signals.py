@@ -21,6 +21,20 @@ from .filtering import filter_media
 from .choices import Val, YouTube_SourceType
 
 
+def is_relative_to(self, *other):
+        """Return True if the path is relative to another path or False.
+        """
+        try:
+            self.relative_to(*other)
+            return True
+        except ValueError:
+            return False
+
+# patch Path for Python 3.8
+if not hasattr(Path, 'is_relative_to'):
+    Path.is_relative_to = is_relative_to
+
+
 @receiver(pre_save, sender=Source)
 def source_pre_save(sender, instance, **kwargs):
     # Triggered before a source is saved, if the schedule has been updated recreate
@@ -31,6 +45,7 @@ def source_pre_save(sender, instance, **kwargs):
         log.debug(f'source_pre_save signal: no existing source: {sender} - {instance}')
         return
 
+    mkdir_p(existing_source.directory_path.resolve(strict=False))
     existing_dirpath = existing_source.directory_path.resolve(strict=True)
     new_dirpath = instance.directory_path.resolve(strict=False)
     if existing_dirpath != new_dirpath:
@@ -151,17 +166,22 @@ def source_pre_delete(sender, instance, **kwargs):
     delete_task_by_source('sync.tasks.check_source_directory_exists', instance.pk)
     delete_task_by_source('sync.tasks.rename_all_media_for_source', instance.pk)
     delete_task_by_source('sync.tasks.save_all_media_for_source', instance.pk)
-    # Schedule deletion of media
-    delete_task_by_source('sync.tasks.delete_all_media_for_source', instance.pk)
-    verbose_name = _('Deleting all media for source "{}"')
-    on_commit(partial(
-        delete_all_media_for_source,
-        str(source.pk),
-        str(source.name),
-        source.directory_path,
-        priority=1,
-        verbose_name=verbose_name.format(source.name),
-    ))
+
+    # Fetch the media source
+    sqs = Source.objects.filter(filter_text=str(source.pk))
+    if sqs.count():
+        media_source = sqs[0]
+        # Schedule deletion of media
+        delete_task_by_source('sync.tasks.delete_all_media_for_source', media_source.pk)
+        verbose_name = _('Deleting all media for source "{}"')
+        on_commit(partial(
+            delete_all_media_for_source,
+            str(media_source.pk),
+            str(media_source.name),
+            str(media_source.directory_path),
+            priority=1,
+            verbose_name=verbose_name.format(media_source.name),
+        ))
 
 
 @receiver(post_delete, sender=Source)
