@@ -46,7 +46,7 @@ def source_pre_save(sender, instance, **kwargs):
         return
 
     args = ( str(instance.pk), )
-    check_source_directory_exists.now(*args
+    check_source_directory_exists.now(*args)
     #mkdir_p(existing_source.directory_path.resolve(strict=False))
     existing_dirpath = existing_source.directory_path.resolve(strict=True)
     new_dirpath = instance.directory_path.resolve(strict=False)
