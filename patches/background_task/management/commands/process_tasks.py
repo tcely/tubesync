@@ -110,6 +110,7 @@ class Command(BaseCommand):
             else:
                 # there were some tasks to process, let's check if there is more work to do after a little break.
                 time.sleep(random.uniform(sig_manager.time_to_wait[0], sig_manager.time_to_wait[1]))
+        self._tasks._pool_runner._pool.close()
 
     def handle(self, *args, **options):
         is_dev = options.get('dev', False)
