@@ -29,11 +29,8 @@ from .forms import (ValidateSourceForm, ConfirmDeleteSourceForm, RedownloadMedia
 from .utils import validate_url, delete_file, multi_key_sort, mkdir_p
 from .tasks import (map_task_to_instance, get_error_message,
                     get_source_completed_tasks, get_media_download_task,
-<<<<< resolve-upstream-main
                     delete_task_by_media, index_source_task, migrate_queues)
-delete_task_by_media, index_source_task)
 from .choices import (Val, MediaServerType, SourceResolution, IndexSchedule,
->>>>> test-delete-source
                         YouTube_SourceType, youtube_long_source_types,
                         youtube_help, youtube_validation_urls)
 from . import signals
