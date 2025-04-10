@@ -208,24 +208,8 @@ class JellyfinMediaServer(MediaServer):
              '<p>The <strong>libraries</strong> is a comma-separated list of library IDs in Jellyfin. Leave this blank to see a list.</p>')
 
     def make_request(self, uri='/', /, *, headers={}, params={}, data={}, json=None, method='GET'):
-        headers = {
-            'User-Agent': 'TubeSync',
-            'X-Emby-Token': self.object.loaded_options['token']  # Jellyfin uses the same `X-Emby-Token` header as Emby
-        }
-
         assert method in {'GET', 'POST'}, f'Unimplemented method: {method}'
-        url = f'{self.object.url}{uri}'
-        log.debug(f'[jellyfin media server] Making HTTP {method} request to: {url}')
-
-        return requests.request(
-            method, url,
-            headers=headers,
-            params=params,
-            data=data,
-            json=json,
-            verify=self.object.verify_https,
-            timeout=self.TIMEOUT,
-        )
+        
         headers.update({'Content-Type': 'application/json'})
         url, kwargs = self.make_request_args(uri=uri, token_header='X-Emby-Token', headers=headers, params=params)
         # From the Emby source code;
@@ -240,11 +224,17 @@ class JellyfinMediaServer(MediaServer):
         if token:
             kwargs['headers'].update({
                 'X-MediaBrowser-Token': token,
-                'X-Emby-Authorization': f'Emby Token={token}, Client=TubeSync, Version={settings.VERSION!s}',
-                'Authorization': f'MediaBrowser Token="{token}", Client="TubeSync", Version="{settings.VERSION!s}"',
+                'X-Emby-Authorization': f'Emby Token={token}, Client=TubeSync, Version={settings.VERSION}',
+                'Authorization': f'MediaBrowser Token="{token}", Client="TubeSync", Version="{settings.VERSION}"',
             })
-        log.debug(f'[jellyfin media server] Making HTTP GET request to: {url}')
-        return requests.get(url, **kwargs)
+
+        log.debug(f'[jellyfin media server] Making HTTP {method} request to: {url}')
+        return requests.request(
+            method, url,
+            data=data,
+            json=json,
+            **kwargs,
+        )
 
     def validate(self):
         if not self.object.host:
