@@ -5,6 +5,7 @@ from django.forms import ValidationError
 from urllib.parse import urlsplit, urlunsplit, urlencode
 from django.utils.translation import gettext_lazy as _
 from common.logger import log
+from django.conf import settings
 
 
 class MediaServerError(Exception):
@@ -46,7 +47,7 @@ class MediaServer:
                 timeout=self.TIMEOUT,
             ))
 
-    def make_request(self, uri='/', headers={}, params={}):
+    def make_request(self, uri='/', /, *, headers={}, params={}):
         '''
             A very simple implementation is:
                 url, kwargs = self.make_request_args(uri=uri, headers=headers, params=params)
@@ -86,7 +87,7 @@ class PlexMediaServer(MediaServer):
              '<a href="https://www.plexopedia.com/plex-media-server/api/server/libraries/" '
              'target="_blank">here</a></p>.')
 
-    def make_request(self, uri='/', headers={}, params={}):
+    def make_request(self, uri='/', /, *, headers={}, params={}):
         url, kwargs = self.make_request_args(uri=uri, headers=headers, token_param='X-Plex-Token', params=params)
         log.debug(f'[plex media server] Making HTTP GET request to: {url}')
         if kwargs['verify']:
@@ -203,13 +204,37 @@ class JellyfinMediaServer(MediaServer):
     HELP = _('<p>To connect your TubeSync server to your Jellyfin Media Server, please enter the details below.</p>'
              '<p>The <strong>host</strong> can be either an IP address or a valid hostname.</p>'
              '<p>The <strong>port</strong> should be between 1 and 65536.</p>'
-             '<p>The <strong>token</strong> is required for API access. You can generate a token in your Jellyfin user profile settings.</p>'
-             '<p>The <strong>libraries</strong> is a comma-separated list of library IDs in Jellyfin.</p>')
+             '<p>The "API Key" <strong>token</strong> is required for API access. Your Jellyfin administrator can generate an "API Key" token for use with TubeSync for you.</p>'
+             '<p>The <strong>libraries</strong> is a comma-separated list of library IDs in Jellyfin. Leave this blank to see a list.</p>')
 
-    def make_request(self, uri='/', headers={}, params={}):
+    def make_request(self, uri='/', /, *, headers={}, params={}, data={}, json=None, method='GET'):
+        assert method in {'GET', 'POST'}, f'Unimplemented method: {method}'
+        
+        headers.update({'Content-Type': 'application/json'})
         url, kwargs = self.make_request_args(uri=uri, token_header='X-Emby-Token', headers=headers, params=params)
-        log.debug(f'[jellyfin media server] Making HTTP GET request to: {url}')
-        return requests.get(url, **kwargs)
+        # From the Emby source code;
+        #   this is the order in which the headers are tried:
+        # X-Emby-Authorization: ('MediaBrowser'|'Emby') 'Token'=<token_value>, 'Client'=<client_value>, 'Version'=<version_value>
+        # X-Emby-Token: <token_value>
+        # X-MediaBrowser-Token: <token_value>
+        # Jellyfin uses 'Authorization' first,
+        # then optionally falls back to the 'X-Emby-Authorization' header.
+        # Jellyfin uses (") around values, but not keys in that header.
+        token = kwargs['headers'].get('X-Emby-Token', None)
+        if token:
+            kwargs['headers'].update({
+                'X-MediaBrowser-Token': token,
+                'X-Emby-Authorization': f'Emby Token={token}, Client=TubeSync, Version={settings.VERSION}',
+                'Authorization': f'MediaBrowser Token="{token}", Client="TubeSync", Version="{settings.VERSION}"',
+            })
+
+        log.debug(f'[jellyfin media server] Making HTTP {method} request to: {url}')
+        return requests.request(
+            method, url,
+            data=data,
+            json=json,
+            **kwargs,
+        )
 
     def validate(self):
         if not self.object.host:
@@ -270,8 +295,8 @@ class JellyfinMediaServer(MediaServer):
     def update(self):
         libraries = self.object.loaded_options.get('libraries', '').split(',')
         for library_id in map(str.strip, libraries):
-            uri = f'/Library/{library_id}/Refresh'
-            response = self.make_request(uri)
+            uri = f'/Items/{library_id}/Refresh'
+            response = self.make_request(uri, method='POST')
             if response.status_code != 204:  # 204 No Content is expected for successful refresh
                 raise MediaServerError(f'Failed to refresh Jellyfin library "{library_id}", status code: {response.status_code}')
         return True
