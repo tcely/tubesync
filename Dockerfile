@@ -45,6 +45,8 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
     apt-get -y --no-install-recommends install locales && \
     printf -- "en_US.UTF-8 UTF-8\n" > /etc/locale.gen && \
     locale-gen en_US.UTF-8 && \
+    # Upgrade the base image packages
+    apt-get -y --no-install-recommends upgrade && \
     # Clean up
     apt-get -y autopurge && \
     apt-get -y autoclean && \
