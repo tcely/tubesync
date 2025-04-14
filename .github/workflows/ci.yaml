@@ -129,7 +129,7 @@ jobs:
             FFMPEG_DATE=${{ needs.info.outputs.ffmpeg-date }}
             FFMPEG_VERSION=${{ needs.info.outputs.ffmpeg-version }}
             YTDLP_DATE=${{ fromJSON(needs.info.outputs.ytdlp-latest-release).tag.name }}
-          cache-from: type=gha
+          #cache-from: type=gha
           load: true
           platforms: linux/amd64
           push: false
