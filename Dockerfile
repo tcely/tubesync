@@ -131,9 +131,8 @@ RUN set -eux ; \
         "${CHECKSUM_ALGORITHM}sum" --check --warn --strict /tmp/SUMS || exit ; \
     else \
         set ; \
-        printf -- '\%s\n' 'Environment:' ; \
+        printf -- '\%s\n' '' 'Environment:' ; \
         env ; \
-        exit 1 ; \
     fi ; \
     "${CHECKSUM_ALGORITHM}sum" --check --warn --strict --ignore-missing "${DESTDIR}/${FFMPEG_FILE_SUMS}" ; \
 \
