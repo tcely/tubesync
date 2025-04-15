@@ -70,7 +70,7 @@ ARG FFMPEG_URL="https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobu
 ARG DESTDIR="/downloaded"
 ARG TARGETARCH
 ADD "${FFMPEG_URL}/${FFMPEG_FILE_SUMS}" "${DESTDIR}/"
-RUN set -eux ; \
+RUN set -eu ; \
     apk --no-cache --no-progress add cmd:aria2c cmd:awk "cmd:${CHECKSUM_ALGORITHM}sum" ; \
 \
     aria2c_options() { \
@@ -99,7 +99,7 @@ RUN set -eux ; \
     FFMPEG_ARCH="$(decide_arch)" ; \
     if [ 'unavailable' = "${FFMPEG_ARCH}" ] ; \
     then \
-        mkdir -v -p "/verified/${TARGETARCH}" ; \
+        mkdir -v "/verified" ; \
         exit 0 ; \
     fi ; \
     FFMPEG_PREFIX_FILE="$( printf -- '%s' "${FFMPEG_PREFIX_FILE}" | cut -d '-' -f 1,2 )" ; \
@@ -151,6 +151,9 @@ ARG TARGETARCH
 RUN set -eux ; \
     mkdir -v /extracted ; \
     cd /extracted ; \
+    if [ '!' -d "/verified/${TARGETARCH}" ] ; \
+        exit 0 ; \
+    fi ; \
     ln -s "/verified/${TARGETARCH}"/"${FFMPEG_PREFIX_FILE}"*"${FFMPEG_SUFFIX_FILE}" "/tmp/ffmpeg${FFMPEG_SUFFIX_FILE}" ; \
     tar -tf "/tmp/ffmpeg${FFMPEG_SUFFIX_FILE}" | grep '/bin/\(ffmpeg\|ffprobe\)' > /tmp/files ; \
     tar -xop \
