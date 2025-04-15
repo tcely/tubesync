@@ -99,6 +99,7 @@ RUN set -eux ; \
     FFMPEG_ARCH="$(decide_arch)" ; \
     if [ 'unavailable' = "${FFMPEG_ARCH}" ] ; \
     then \
+        mkdir -v -p "/verified/${TARGETARCH}" ; \
         exit 0 ; \
     fi ; \
     FFMPEG_PREFIX_FILE="$( printf -- '%s' "${FFMPEG_PREFIX_FILE}" | cut -d '-' -f 1,2 )" ; \
