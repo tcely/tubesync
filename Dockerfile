@@ -152,6 +152,7 @@ RUN set -eux ; \
     mkdir -v /extracted ; \
     cd /extracted ; \
     if [ '!' -d "/verified/${TARGETARCH}" ] ; \
+    then \
         exit 0 ; \
     fi ; \
     ln -s "/verified/${TARGETARCH}"/"${FFMPEG_PREFIX_FILE}"*"${FFMPEG_SUFFIX_FILE}" "/tmp/ffmpeg${FFMPEG_SUFFIX_FILE}" ; \
