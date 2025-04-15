@@ -239,8 +239,10 @@ ARG TARGETARCH
 RUN set -eux ; \
 \
     decide_arch() { \
+      local uname_m ; \
+      uname_m="$(uname -m)" ; \
       local arg1 ; \
-      arg1="${1:-$(uname -m)}" ; \
+      arg1="${1:-"${uname_m}"}" ; \
 \
       case "${arg1}" in \
         (amd64) printf -- 'x86_64' ;; \
