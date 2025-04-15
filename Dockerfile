@@ -92,10 +92,15 @@ RUN set -eux ; \
         case "${TARGETARCH}" in \
             (amd64) printf -- 'linux64' ;; \
             (arm64) printf -- 'linuxarm64' ;; \
+            (arm|arm/*) printf -- 'unavailable' ;; \
         esac ; \
     } ; \
 \
     FFMPEG_ARCH="$(decide_arch)" ; \
+    if [ 'unavailable' = "${FFMPEG_ARCH}" ] ; \
+    then \
+        exit 0 ; \
+    fi ; \
     FFMPEG_PREFIX_FILE="$( printf -- '%s' "${FFMPEG_PREFIX_FILE}" | cut -d '-' -f 1,2 )" ; \
     for url in $(awk ' \
       $2 ~ /^[*]?'"${FFMPEG_PREFIX_FILE}"'/ && /-'"${FFMPEG_ARCH}"'-/ { $1=""; print; } \
@@ -129,10 +134,6 @@ RUN set -eux ; \
     then \
         printf -- '%s *%s\n' "${FFMPEG_HASH}" "${FFMPEG_PREFIX_FILE}"*-"${FFMPEG_ARCH}"-*"${FFMPEG_SUFFIX_FILE}" >> /tmp/SUMS ; \
         "${CHECKSUM_ALGORITHM}sum" --check --warn --strict /tmp/SUMS || exit ; \
-    else \
-        set ; \
-        printf -- '\%s\n' '' 'Environment:' ; \
-        env ; \
     fi ; \
     "${CHECKSUM_ALGORITHM}sum" --check --warn --strict --ignore-missing "${DESTDIR}/${FFMPEG_FILE_SUMS}" ; \
 \
