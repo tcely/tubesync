@@ -7,6 +7,8 @@ ARG S6_VERSION="3.2.0.2"
 
 ARG SHA256_S6_AMD64="59289456ab1761e277bd456a95e737c06b03ede99158beb24f12b165a904f478"
 ARG SHA256_S6_ARM64="8b22a2eaca4bf0b27a43d36e65c89d2701738f628d1abd0cea5569619f66f785"
+ARG SHA256_S6_ARMHF="c8b8532fe4ec432898960e9ec9c903926454ce73588d4c94ad0e023f0b34fe39"
+ARG SHA256_S6_ARM="e00b0d94f2cf1e4178c922c7b90181a619981103be635fe5fb0c9547e4193c52"
 ARG SHA256_S6_NOARCH="6dbcde158a3e78b9bb141d7bcb5ccb421e563523babbe2c64470e76f4fd02dae"
 
 ARG ALPINE_VERSION="latest"
@@ -171,6 +173,8 @@ FROM alpine:${ALPINE_VERSION} AS s6-overlay-download
 ARG S6_VERSION
 ARG SHA256_S6_AMD64
 ARG SHA256_S6_ARM64
+ARG SHA256_S6_ARMHF
+ARG SHA256_S6_ARM
 ARG SHA256_S6_NOARCH
 
 ARG DESTDIR="/downloaded"
@@ -179,6 +183,8 @@ ARG CHECKSUM_ALGORITHM="${S6_CHECKSUM_ALGORITHM}"
 
 ARG S6_CHECKSUM_AMD64="${CHECKSUM_ALGORITHM}:${SHA256_S6_AMD64}"
 ARG S6_CHECKSUM_ARM64="${CHECKSUM_ALGORITHM}:${SHA256_S6_ARM64}"
+ARG S6_CHECKSUM_ARMHF="${CHECKSUM_ALGORITHM}:${SHA256_S6_ARMHF}"
+ARG S6_CHECKSUM_ARM="${CHECKSUM_ALGORITHM}:${SHA256_S6_ARM}"
 ARG S6_CHECKSUM_NOARCH="${CHECKSUM_ALGORITHM}:${SHA256_S6_NOARCH}"
 
 ARG S6_OVERLAY_URL="https://github.com/just-containers/s6-overlay/releases/download/v${S6_VERSION}"
@@ -187,10 +193,14 @@ ARG S6_SUFFIX_FILE=".tar.xz"
 
 ARG S6_FILE_AMD64="${S6_PREFIX_FILE}x86_64${S6_SUFFIX_FILE}"
 ARG S6_FILE_ARM64="${S6_PREFIX_FILE}aarch64${S6_SUFFIX_FILE}"
+ARG S6_FILE_ARMHF="${S6_PREFIX_FILE}armhf${S6_SUFFIX_FILE}"
+ARG S6_FILE_ARM="${S6_PREFIX_FILE}arm${S6_SUFFIX_FILE}"
 ARG S6_FILE_NOARCH="${S6_PREFIX_FILE}noarch${S6_SUFFIX_FILE}"
 
 ADD "${S6_OVERLAY_URL}/${S6_FILE_AMD64}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM64}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
+ADD "${S6_OVERLAY_URL}/${S6_FILE_ARMHF}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
+ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}.${CHECKSUM_ALGORITHM}" "${DESTDIR}/"
 
 ##ADD --checksum="${S6_CHECKSUM_AMD64}" "${S6_OVERLAY_URL}/${S6_FILE_AMD64}" "${DESTDIR}/"
@@ -206,6 +216,14 @@ ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM64}" "${DESTDIR}/"
 RUN set -eu ; checksum="${S6_CHECKSUM_ARM64}" ; file="${S6_FILE_ARM64}" ; cd "${DESTDIR}/" && \
     printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
 
+ADD "${S6_OVERLAY_URL}/${S6_FILE_ARMHF}" "${DESTDIR}/"
+RUN set -eu ; checksum="${S6_CHECKSUM_ARMHF}" ; file="${S6_FILE_ARMHF}" ; cd "${DESTDIR}/" && \
+    printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
+
+ADD "${S6_OVERLAY_URL}/${S6_FILE_ARM}" "${DESTDIR}/"
+RUN set -eu ; checksum="${S6_CHECKSUM_ARM}" ; file="${S6_FILE_ARM}" ; cd "${DESTDIR}/" && \
+    printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
+
 ADD "${S6_OVERLAY_URL}/${S6_FILE_NOARCH}" "${DESTDIR}/"
 RUN set -eu ; checksum="${S6_CHECKSUM_NOARCH}" ; file="${S6_FILE_NOARCH}" ; cd "${DESTDIR}/" && \
     printf -- '%s *%s\n' "$(printf -- '%s' "${checksum}" | cut -d : -f 2-)" "${file}" | "${CHECKSUM_ALGORITHM}sum" -cw
@@ -218,7 +236,7 @@ ARG CHECKSUM_ALGORITHM="${S6_CHECKSUM_ALGORITHM}"
 
 ARG TARGETARCH
 
-RUN set -eu ; \
+RUN set -eux ; \
 \
     decide_arch() { \
       local arg1 ; \
@@ -236,10 +254,10 @@ RUN set -eu ; \
     apk --no-cache --no-progress add "cmd:${CHECKSUM_ALGORITHM}sum" ; \
     mkdir -v /verified ; \
     cd /downloaded ; \
-    for f in *.sha256 ; \
+    for f in *."${CHECKSUM_ALGORITHM}" ; \
     do \
       "${CHECKSUM_ALGORITHM}sum" --check --warn --strict "${f}" || exit ; \
-      ln -v "${f%.sha256}" /verified/ || exit ; \
+      ln -v "${f%.${CHECKSUM_ALGORITHM}}" /verified/ || exit ; \
     done ; \
     unset -v f ; \
 \
@@ -277,6 +295,7 @@ ENV S6_VERSION="${S6_VERSION}" \
 RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/var/lib/apt \
     --mount=type=cache,id=apt-cache-cache,sharing=private,target=/var/cache/apt \
   set -x && \
+  ffmpeg_pkg="$( [ 'arm' = "${TARGETARCH}" ] && printf 'ffmpeg' || printf '')" && \
   apt-get update && \
   # Install dependencies we keep
   # Install required distro packages
@@ -294,6 +313,7 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
   python3-wheel \
   curl \
   less \
+  ${ffmpeg_pkg} \
   && \
   # Link to the current python3 version
   ln -v -s -f -T "$(find /usr/local/lib -name 'python3.[0-9]*' -type d -printf '%P\n' | sort -r -V | head -n 1)" /usr/local/lib/python3 && \
@@ -318,8 +338,10 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
     # Installed s6 (using COPY earlier)
     file -L /command/s6-overlay-suexec && \
     # Installed ffmpeg (using COPY earlier)
-    /usr/local/bin/ffmpeg -version && \
-    file /usr/local/bin/ff* && \
+    ffmpeg="$(command -v ffmpeg)" && \
+    ffmpeg_dir="$(dirname "${ffmpeg}")" && \
+    "${ffmpeg_dir}"/ffmpeg -version && \
+    file "${ffmpeg_dir}"/ff* && \
     # Clean up file
     apt-get -y autoremove --purge file && \
     # Clean up
