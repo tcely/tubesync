@@ -130,7 +130,7 @@ jobs:
             FFMPEG_DATE=${{ needs.info.outputs.ffmpeg-date }}
             FFMPEG_VERSION=${{ needs.info.outputs.ffmpeg-version }}
             YTDLP_DATE=${{ fromJSON(needs.info.outputs.ytdlp-latest-release).tag.name }}
-          cache-from: type=gha
+          cache-from: type=gha,timeout=10m
           load: true
           platforms: linux/amd64
           push: false
@@ -157,7 +157,7 @@ jobs:
             type=registry,ref=ghcr.io/meeb/${{ env.IMAGE_NAME }}:latest
             type=gha
           cache-to: |
-            type=gha,mode=max
+            type=gha,mode=max,timeout=20m
           build-args: |
             IMAGE_NAME=${{ env.IMAGE_NAME }}
             FFMPEG_DATE=${{ needs.info.outputs.ffmpeg-date }}
