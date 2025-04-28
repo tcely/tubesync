@@ -555,6 +555,8 @@ def download_media_thumbnail(media_id, url):
     )
     i = image_file = None
     log.info(f'Saved thumbnail for: {media} from: {url}')
+    arg = getattr(settings, 'THUMBNAIL_DELAY_FLOAT', 1.5)
+    time.sleep(random.expovariate(arg))
     return True
 
 
