@@ -290,7 +290,7 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
     --mount=type=cache,id=apt-cache-cache,sharing=private,target=/var/cache/apt \
   set -x && \
   apt-get update && \
-  apt-get -y --no-install-recommends install nginx-light openresty && \
+  apt-get -y --no-install-recommends install nginx-common openresty && \
   # Clean up
   apt-get -y autopurge && \
   apt-get -y autoclean && \
@@ -456,7 +456,8 @@ RUN set -x && \
   mkdir -v -p /downloads/audio && \
   mkdir -v -p /downloads/video && \
   # Check nginx configuration copied from config/root/etc
-  nginx -t && \
+  openresty -c /etc/nginx/nginx.conf -e stderr
+ -t && \
   # Append software versions
   ffmpeg_version=$(/usr/local/bin/ffmpeg -version | awk -v 'ev=31' '1 == NR && "ffmpeg" == $1 { print $3; ev=0; } END { exit ev; }') && \
   test -n "${ffmpeg_version}" && \
