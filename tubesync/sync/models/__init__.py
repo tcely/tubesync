@@ -1,6 +1,6 @@
 # These are referenced from the migration files
 
-from .misc import (
+from ._migrations import (
     get_media_file_path,
     get_media_thumb_path,
     media_file_storage,
