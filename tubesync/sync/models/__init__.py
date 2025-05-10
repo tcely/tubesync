@@ -7,10 +7,13 @@ from ._migrations import (
 )
 
 # The actual model classes
+# The order starts with independent classes
+# then the classes that depend on them follow.
 
-from .media import Media
+from .media_server import MediaServer
+
 from .source import Source
+from .media import Media
 from .metadata import Metadata
 from .metadata_format import MetadataFormat
-from .media_server import MediaServer
 
