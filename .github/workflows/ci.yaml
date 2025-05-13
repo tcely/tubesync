@@ -158,7 +158,7 @@ jobs:
             type=registry,ref=ghcr.io/meeb/${{ env.IMAGE_NAME }}:latest
             type=gha
           cache-to: |
-            type=gha,mode=max
+            type=gha,mode=max,ignore-error=true
           build-args: |
             IMAGE_NAME=${{ env.IMAGE_NAME }}
             FFMPEG_DATE=${{ needs.info.outputs.ffmpeg-date }}
