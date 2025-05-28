@@ -169,6 +169,7 @@ jobs:
           DOCKER_TOKEN: ${{ 'meeb' == github.repository_owner && secrets.REGISTRY_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
         run: echo "${DOCKER_TOKEN}" | docker login --password-stdin --username "${DOCKER_USERNAME}" "${DOCKER_REGISTRY}"
       - name: Build image for `dive`
+        if: ${{ 'success' != needs.test.result }}
         id: build-dive-image
         uses: docker/build-push-action@v6
         with:
@@ -181,14 +182,14 @@ jobs:
           load: true
           platforms: linux/amd64
           push: false
-          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:dive
+          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.5
       - name: Analysis with `dive`
         continue-on-error: false
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             'ghcr.io/wagoodman/dive' \
-            'ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:dive' \
+            'ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.5' \
             --ci \
             --highestUserWastedPercent '0.05' \
             --highestWastedBytes '50M'
@@ -198,15 +199,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
-          push: ${{ 'success' == needs.test.result && 'meeb' == github.repository_owner && 'pull_request' != github.event_name && 'true' || 'false' }}
-          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:latest
+          push: ${{ 'success' == needs.test.result && 'tcely' == github.repository_owner && 'pull_request' != github.event_name && 'true' || 'false' }}
+          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.5
           cache-from: |
-            type=registry,ref=ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:latest
-            type=registry,ref=ghcr.io/${{ needs.info.outputs.lowercase-github-repository_owner }}/${{ env.IMAGE_NAME }}:latest
+            type=registry,ref=ghcr.io/meeb/${{ env.IMAGE_NAME }}:latest
             type=gha
           cache-to: |
             type=gha,mode=max
-            ${{ 'meeb' == github.repository_owner && 'pull_request' != github.event_name && 'type=inline' || '' }}
           build-args: |
             IMAGE_NAME=${{ env.IMAGE_NAME }}
             FFMPEG_DATE=${{ needs.info.outputs.ffmpeg-date }}
