@@ -191,7 +191,7 @@ jobs:
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             'ghcr.io/wagoodman/dive' \
-            'ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.5' \
+            'ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.6' \
             --ci \
             --highestUserWastedPercent '0.05' \
             --highestWastedBytes '50M'
