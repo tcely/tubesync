@@ -485,8 +485,8 @@ RUN set -x && \
   mkdir -v -p /config/tasks && \
   /usr/bin/python3 -B /app/manage.py compilescss && \
   /usr/bin/python3 -B /app/manage.py collectstatic --no-input --link && \
+  rm -rvf /config /downloads /run/app && \
   # Create config, downloads and run dirs
-  rm -rf /config && \
   mkdir -v -p /run/app && \
   mkdir -v -p /config/media /config/tasks /config/tubesync && \
   mkdir -v -p /config/cache/pycache && \
