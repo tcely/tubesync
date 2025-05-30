@@ -184,7 +184,7 @@ jobs:
           load: true
           platforms: linux/amd64
           push: false
-          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.5
+          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.6
       - name: Analysis with `dive`
         continue-on-error: false
         run: |
@@ -202,7 +202,7 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
           push: ${{ 'success' == needs.test.result && 'tcely' == github.repository_owner && 'pull_request' != github.event_name && 'true' || 'false' }}
-          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.5
+          tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:0.15.6
           cache-from: |
             type=registry,ref=ghcr.io/meeb/${{ env.IMAGE_NAME }}:latest
             type=gha
