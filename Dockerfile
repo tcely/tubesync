@@ -482,11 +482,13 @@ RUN set -x && \
   # Make absolutely sure we didn't accidentally bundle a SQLite dev database
   rm -rf /app/db.sqlite3 && \
   # Run any required app commands
+  mkdir -v -p /config/tasks && \
   /usr/bin/python3 -B /app/manage.py compilescss && \
   /usr/bin/python3 -B /app/manage.py collectstatic --no-input --link && \
   # Create config, downloads and run dirs
+  rm -rf /config && \
   mkdir -v -p /run/app && \
-  mkdir -v -p /config/media && \
+  mkdir -v -p /config/media /config/tasks /config/tubesync && \
   mkdir -v -p /config/cache/pycache && \
   mkdir -v -p /downloads/audio && \
   mkdir -v -p /downloads/video && \
