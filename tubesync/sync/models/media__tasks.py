@@ -15,14 +15,18 @@ def download_checklist(self, skip_checks=False):
         return True
 
     if not media.source.download_media:
-        log.warn(f'Download task triggered for media: {media} (UUID: {media.pk}) but '
-                 f'the source {media.source} has since been marked to not download, '
-                 f'not downloading')
+        log.warning(
+            f'Download task triggered for media: {media} (UUID: {media.pk}) but'
+            f' the source {media.source} has since been marked to not download,'
+            ' not downloading media from this source.'
+        )
         return False
     if media.skip or media.manual_skip:
         # Media was toggled to be skipped after the task was scheduled
-        log.warn(f'Download task triggered for media: {media} (UUID: {media.pk}) but '
-                 f'it is now marked to be skipped, not downloading')
+        log.warning(
+            f'Download task triggered for media: {media} (UUID: {media.pk}) but'
+            f' it is now marked to be skipped, not downloading it.'
+        )
         return False
     # metadata is required to generate the proper filepath
     if not media.has_metadata:
@@ -38,16 +42,20 @@ def download_checklist(self, skip_checks=False):
     if downloaded_file_exists:
         # Media has been marked as downloaded before the download_media task was fired,
         # skip it
-        log.warn(f'Download task triggered for media: {media} (UUID: {media.pk}) but '
-                 f'it has already been marked as downloaded, not downloading again')
+        log.warning(
+            f'Download task triggered for media: {media} (UUID: {media.pk}) but'
+            ' it has already been marked as downloaded, not downloading again.'
+        )
         return False
     max_cap_age = media.source.download_cap_date
     published = media.published
     if max_cap_age and published:
         if published <= max_cap_age:
-            log.warn(f'Download task triggered media: {media} (UUID: {media.pk}) but '
-                     f'the source has a download cap and the media is now too old, '
-                     f'not downloading')
+            log.warning(
+                f'Download task triggered media: {media} (UUID: {media.pk}) but'
+                ' the source has a download cap and the media is now too old,'
+                ' not downloading it.'
+            )
             return False
     return True
 
