@@ -773,7 +773,7 @@ class Media(models.Model):
         try:
             timestamp_float = float(timestamp)
         except (TypeError, ValueError,) as e:
-            log.warn(f'Could not compute published from timestamp for: {self.source} / {self} with "{e}"')
+            log.warning(f'Could not compute published from timestamp for: {self.source} / {self} with "{e}"')
             pass
         else:
             return self.posix_epoch + timedelta(seconds=timestamp_float)
