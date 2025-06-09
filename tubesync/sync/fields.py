@@ -177,8 +177,10 @@ class CommaSepChoiceField(models.CharField):
         value = data.selected_choices
         s_value = super().get_prep_value(value)
         if set(s_value) != set(value):
-            self.log.warn(f'CommaSepChoiceField:get_prep_value: values did not match. '
-                          f'CommaSepChoiceField({value}) versus CharField({s_value})')
+            self.log.warning(
+                'CommaSepChoiceField:get_prep_value: values did not match.'
+                f' CommaSepChoiceField({value}) versus CharField({s_value})'
+            )
         return self.__class__._tuple__str__(data)
 
     
