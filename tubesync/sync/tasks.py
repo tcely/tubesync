@@ -595,8 +595,10 @@ def download_media_thumbnail(media_id, url):
         raise InvalidTaskError(_('no such media')) from e
     if media.skip or media.manual_skip:
         # Media was toggled to be skipped after the task was scheduled
-        log.warn(f'Download task triggered for media: {media} (UUID: {media.pk}) but '
-                 f'it is now marked to be skipped, not downloading thumbnail')
+        log.warning(
+            f'Download thumbnail task triggered for media: {media} (UUID: {media.pk}) but'
+            ' it is now marked to be skipped, not downloading thumbnail.'
+        )
         return
     width = getattr(settings, 'MEDIA_THUMBNAIL_WIDTH', 430)
     height = getattr(settings, 'MEDIA_THUMBNAIL_HEIGHT', 240)
@@ -710,7 +712,10 @@ def download_media(media_id, override=False):
             try:
                 write_text_file(media.nfopath, media.nfoxml)
             except PermissionError as e:
-                log.warn(f'A permissions problem occured when writing the new media NFO file: {e.msg}')
+                log.warning(
+                    'A permissions problem occured when writing the'
+                    f' new media NFO file: {e}'
+                )
                 pass
         # Schedule a task to update media servers
         schedule_media_servers_update()
@@ -886,8 +891,10 @@ def delete_all_media_for_source(source_id, source_name, source_directory):
         source = Source.objects.get(pk=source_id)
     except Source.DoesNotExist:
         # Task triggered but the source no longer exists, do nothing
-        log.warn(f'Task delete_all_media_for_source(pk={source_id}) called but no '
-                  f'source exists with ID: {source_id}')
+        log.warning(
+            f'Task delete_all_media_for_source(pk={source_id}) called but no'
+            f' source exists with ID: {source_id}'
+        )
         #raise InvalidTaskError(_('no such source')) from e
         pass # this task can run after a source was deleted
     mqs = Media.objects.all().defer(
