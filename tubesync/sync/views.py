@@ -998,11 +998,7 @@ class ResetTasks(FormView):
             h_q_reset_tasks(queue_name)
         # Iter all tasks
         for source in Source.objects.all():
-            verbose_name = _('Check download directory exists for source "{}"')
-            check_source_directory_exists(
-                str(source.pk),
-                verbose_name=verbose_name.format(source.name),
-            )
+            check_source_directory_exists(str(source.pk))
             # This also chains down to call each Media objects .save() as well
             source.save()
         return super().form_valid(form)
