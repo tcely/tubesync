@@ -25,10 +25,11 @@ from django.db.transaction import atomic
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from background_task import background
-from django_huey import db_periodic_task, db_task, task as huey_task # noqa
-from huey import CancelExecution
 from background_task.exceptions import InvalidTaskError
 from background_task.models import Task, CompletedTask
+from django_huey import db_periodic_task, db_task, task as huey_task # noqa
+from huey import CancelExecution
+from common.huey import dynamic_retry
 from common.logger import log
 from common.errors import ( BgTaskWorkerError, DownloadFailedException,
                             NoFormatException, NoMediaException,
@@ -164,6 +165,9 @@ def get_media_download_task(media_id):
 
 def get_media_metadata_task(media_id):
     return get_first_task('sync.tasks.download_media_metadata', media_id)
+
+def get_media_thumbnail_task(media_id):
+    return get_first_task('sync.tasks.download_media_thumbnail', media_id)
 
 def get_media_premiere_task(media_id):
     return get_first_task('sync.tasks.wait_for_media_premiere', media_id)
@@ -554,7 +558,7 @@ def check_source_directory_exists(source_id):
         source.make_directory()
 
 
-@db_task(delay=10, priority=90, queue=Val(TaskQueue.NET))
+@dynamic_retry(db_task, delay=10, priority=90, retries=15, queue=Val(TaskQueue.NET))
 def download_source_images(source_id):
     '''
         Downloads an image and save it as a local thumbnail attached to a
@@ -894,19 +898,15 @@ def save_all_media_for_source(source_id):
     update_task_status(task, None)
 
 
-@db_task(priority=50, queue=Val(TaskQueue.LIMIT))
+@dynamic_retry(db_task, backoff_func=lambda n: (n*3600)+600, priority=50, retries=15, queue=Val(TaskQueue.LIMIT))
 def refresh_formats(media_id):
     try:
         media = Media.objects.get(pk=media_id)
     except Media.DoesNotExist as e:
         raise CancelExecution(_('no such media'), retry=False) from e
-    try:
-        media.refresh_formats
-    except YouTubeError as e:
-        log.debug(f'Failed to refresh formats for: {media.source} / {media.key}: {e!s}')
-        pass
     else:
-        save_model(media)
+        if media.refresh_formats:
+            save_model(media)
 
 
 @background(schedule=dict(priority=20, run_at=60), queue=Val(TaskQueue.FS), remove_existing_tasks=True)
