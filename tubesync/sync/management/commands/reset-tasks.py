@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand, CommandError # noqa
 from django.db.transaction import atomic
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _ # noqa
 from background_task.models import Task
 from django_huey import DJANGO_HUEY
 from common.huey import h_q_reset_tasks
