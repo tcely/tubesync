@@ -52,17 +52,21 @@ FORCE_SCRIPT_NAME = None
 DJANGO_HUEY = {
     'default': 'network',
     'queues': {
-        'database': sqlite_tasks('database'),
-        'filesystem': sqlite_tasks('filesystem'),
-        'limited': sqlite_tasks('limited', prefix='net'),
-        'network': sqlite_tasks('network'),
+        'database': sqlite_tasks('database', thread=True),
+        'filesystem': sqlite_tasks('filesystem', thread=True),
+        'limited': sqlite_tasks('limited', prefix='net', workers=1),
+        'network': sqlite_tasks('network', thread=True, workers=0),
     },
+    'verbose': None if 'true' == getenv('TUBESYNC_DEBUG', False).strip().lower() else False,
 }
 for django_huey_queue in DJANGO_HUEY['queues'].values():
     connection = django_huey_queue.get('connection')
     if connection:
         filepath = Path('/.' + connection.get('filename') or '').resolve(strict=False)
         filepath.parent.mkdir(exist_ok=True, parents=True)
+    consumer = django_huey_queue.get('consumer')
+    if consumer:
+        consumer['verbose'] = DJANGO_HUEY.get('verbose', False)
 
 
 TEMPLATES = [

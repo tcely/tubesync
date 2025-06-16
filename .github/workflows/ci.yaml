@@ -226,15 +226,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64
-          push: ${{ 'success' == needs.test.result && 'meeb' == github.repository_owner && 'pull_request' != github.event_name && 'true' || 'false' }}
+          push: ${{ 'success' == needs.test.result && 'tcely' == github.repository_owner && 'pull_request' != github.event_name && 'true' || 'false' }}
           tags: ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:latest
           cache-from: |
-            type=registry,ref=ghcr.io/${{ needs.info.outputs.lowercase-github-actor }}/${{ env.IMAGE_NAME }}:latest
-            type=registry,ref=ghcr.io/${{ needs.info.outputs.lowercase-github-repository_owner }}/${{ env.IMAGE_NAME }}:latest
             type=gha
           cache-to: |
             type=gha,mode=max
-            ${{ 'meeb' == github.repository_owner && 'pull_request' != github.event_name && 'type=inline' || '' }}
           build-args: |
             IMAGE_NAME=${{ env.IMAGE_NAME }}
             FFMPEG_DATE=${{ needs.info.outputs.ffmpeg-date }}

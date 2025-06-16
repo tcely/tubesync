@@ -1,3 +1,4 @@
+import os
 from functools import wraps
 
 
@@ -30,13 +31,62 @@ def h_q_tuple(q, /):
     )
 
 
-def sqlite_tasks(key, /, prefix=None):
+def h_q_reset_tasks(q, /, *, maint_func=None):
+    if isinstance(q, str):
+        from django_huey import get_queue
+        q = get_queue(q)
+    # revoke to prevent pending tasks from executing
+    for t in q._registry._registry.values():
+        q.revoke_all(t, revoke_until=delay_to_eta(600))
+    # clear scheduled tasks
+    q.storage.flush_schedule()
+    # clear pending tasks
+    q.storage.flush_queue()
+    # run the maintenance function
+    def default_maint_func(queue, /, exception=None, status=None):
+        if status is None:
+            return
+        if 'exception' == status and exception is not None:
+            # log, but do not raise an exception
+            from huey import logger
+            logger.error(
+                f'{queue.name}: maintenance function exception: {exception}'
+            )
+            return
+        return True
+    maint_result = None
+    if maint_func is None:
+        maint_func = default_maint_func
+    if maint_func and callable(maint_func):
+        try:
+            maint_result = maint_func(q, status='started')
+        except Exception as exc:
+            maint_result = maint_func(q, exception=exc, status='exception')
+            pass
+        finally:
+            maint_func(q, status='finished')
+    # clear everything now that we are done
+    q.storage.flush_all()
+    q.flush()
+    # return the results from the maintenance function
+    return maint_result
+
+
+def sqlite_tasks(key, /, prefix=None, thread=None, workers=None):
     name_fmt = 'huey_{}'
-    if prefix is None:
-        prefix = ''
     if prefix:
         name_fmt = f'huey_{prefix}_' + '{}'
     name = name_fmt.format(key)
+    thread = thread is True
+    try:
+        workers = int(workers)
+    except TypeError:
+        workers = 2
+    finally:
+        if 0 >= workers:
+            workers = os.cpu_count()
+        elif 1 == workers:
+            thread = False
     return dict(
         huey_class='huey.SqliteHuey',
         name=name,
@@ -51,8 +101,8 @@ def sqlite_tasks(key, /, prefix=None):
             strict_fifo=True,
         ),
         consumer=dict(
-            workers=1,
-            worker_type='process',
+            workers=workers if thread else 1,
+            worker_type='thread' if thread else 'process',
             max_delay=20.0,
             flush_locks=True,
             scheduler_interval=10,
