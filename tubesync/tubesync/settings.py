@@ -58,7 +58,7 @@ DJANGO_HUEY = {
 for queue_name in TaskQueue.values:
     queues = DJANGO_HUEY['queues']
     if TaskQueue.LIMIT.value == queue_name:
-        queues[queue_name] = sqlite_tasks(queue_name, prefix='net')
+        queues[queue_name] = sqlite_tasks(queue_name, prefix='net', workers=1)
     elif TaskQueue.NET.value == queue_name:
         queues[queue_name] = sqlite_tasks(queue_name, thread=True, workers=0)
     else:
