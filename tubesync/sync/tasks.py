@@ -29,7 +29,7 @@ from background_task.exceptions import InvalidTaskError
 from background_task.models import Task, CompletedTask
 from django_huey import db_periodic_task, db_task, task as huey_task # noqa
 from huey import crontab as huey_crontab
-from common.huey import CancelExecution, dynamic_retry
+from common.huey import CancelExecution, dynamic_retry, register_huey_signals
 from common.logger import log
 from common.errors import ( BgTaskWorkerError, DownloadFailedException,
                             NoFormatException, NoMediaException,
@@ -42,6 +42,7 @@ from .utils import get_remote_image, resize_image_to_height, filter_response
 from .youtube import YouTubeError
 
 db_vendor = db.connection.vendor
+register_huey_signals()
 
 
 def get_hash(task_name, pk):
@@ -423,18 +424,18 @@ def wait_for_database_queue():
     from common.huey import h_q_tuple
     queue_name = Val(TaskQueue.DB)
     consumer_down_path = Path(f'/run/service/huey-{queue_name}/down')
-    worker_down_path = Path('/run/service/tubesync-db-worker/down')
+    included_names = frozenset(('migrate_to_metadata',))
     total_count = 1
     while 0 < total_count:
         if consumer_down_path.exists() and consumer_down_path.is_file():
             raise BgTaskWorkerError(_('queue consumer stopped'))
-        if worker_down_path.exists() and worker_down_path.is_file():
-            raise BgTaskWorkerError(_('queue worker stopped'))
         time.sleep(5)
         status_dict = h_q_tuple(queue_name)[2]
-        total_count = Task.objects.unlocked(timezone.now()).filter(queue=queue_name).count()
-        total_count += status_dict.get('pending', (0,))[0]
-        total_count += status_dict.get('scheduled', (0,))[0]
+        total_count = status_dict.get('pending', (0,))[0]
+        scheduled_tasks = status_dict.get('scheduled', (0,[]))[1] 
+        total_count += sum(
+            [ 1 for t in scheduled_tasks if t.name.rsplit('.', 1)[-1] in included_names ],
+        )
 
 
 @background(schedule=dict(priority=20, run_at=30), queue=Val(TaskQueue.NET), remove_existing_tasks=True)
@@ -981,8 +982,29 @@ def refresh_formats(media_id):
             media,
             queue_name=Val(TaskQueue.LIMIT),
         )
-        if media.refresh_formats:
-            save_model(media)
+        save, retry, msg = media.refresh_formats()
+        if save is not True:
+            log.warning(f'Refreshing formats for "{media.key}" failed: {msg}')
+            exc = CancelExecution(
+                _('failed to refresh formats for:'),
+                f'{media.key} / {media.uuid}:',
+                msg,
+                retry=retry,
+            )
+            # combine the strings
+            exc.args = (' '.join(exc.args),)
+            # store instance details
+            exc.instance = dict(
+                key=media.key,
+                model='Media',
+                uuid=str(media.pk),
+            )
+            # store the function results
+            exc.reason = msg
+            exc.save = save
+            raise exc
+        log.info(f'Saving refreshed formats for "{media.key}": {msg}')
+        save_model(media)
 
 
 @db_task(delay=60, priority=80, retries=5, retry_delay=60, queue=Val(TaskQueue.FS))

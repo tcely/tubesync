@@ -22,6 +22,7 @@ class Command(BaseCommand):
             Task.objects.all().delete()
             # Iter all sources, creating new tasks
             for source in Source.objects.all():
+                log.info(f'Resetting tasks for source: {source}')
                 check_source_directory_exists(str(source.pk))
                 # This also chains down to call each Media objects .save() as well
                 source.save()
