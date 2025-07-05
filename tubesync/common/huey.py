@@ -1,15 +1,34 @@
+import datetime
 import os
 from functools import wraps
 from huey import (
     CancelExecution, SqliteHuey as huey_SqliteHuey,
     signals, utils,
 )
+from .timestamp import datetime_to_timestamp, timestamp_to_datetime
 
 
 class SqliteHuey(huey_SqliteHuey):
+    begin_sql = 'BEGIN IMMEDIATE'
+    auto_vacuum = 'INCREMENTAL'
+    vacuum_pages = 10
+
+    def _create_connection(self):
+        conn = super()._create_connection()
+        conn.execute(f'PRAGMA incremental_vacuum({self.vacuum_pages})')
+        # copied from huey_SqliteHuey to use EXTRA or NORMAL
+        # instead of FULL or OFF
+        conn.execute('pragma synchronous=%s' % (3 if self._fsync else 1))
+        return conn
+
     def _emit(self, signal, task, *args, **kwargs):
         kwargs['huey'] = self
         super()._emit(signal, task, *args, **kwargs)
+
+    def initialize_schema(self):
+        self.ddl.insert(0, f'PRAGMA auto_vacuum = {self.auto_vacuum}')
+        self.ddl.append('VACUUM')
+        super().initialize_schema()
 
 
 def CancelExecution_init(self, *args, retry=None, **kwargs):
@@ -26,7 +45,7 @@ def h_q_dict(q, /):
     return dict(
         scheduled=(q.scheduled_count(), q.scheduled(),),
         pending=(q.pending_count(), q.pending(),),
-        result=(q.result_count(), list(q.all_results().keys()),),
+        results=(q.result_count(), list(q.all_results().keys()),),
     )
 
 
@@ -109,7 +128,9 @@ def sqlite_tasks(key, /, prefix=None, thread=None, workers=None):
         connection=dict(
             filename=f'/config/tasks/{name}.db',
             fsync=True,
+            isolation_level='IMMEDIATE', # _create_connection sets this to None
             strict_fifo=True,
+            timeout=60,
         ),
         consumer=dict(
             workers=workers if thread else 1,
@@ -179,10 +200,117 @@ def on_interrupted(signal_name, task_obj, exception_obj=None, /, *, huey=None):
     assert hasattr(huey, 'enqueue') and callable(huey.enqueue)
     huey.enqueue(task_obj)
 
+storage_key_prefix = 'task_history:'
+
+def historical_task(signal_name, task_obj, exception_obj=None, /, *, huey=None):
+    signal_time = utils.time_clock()
+    signal_dt = datetime.datetime.now(datetime.timezone.utc)
+
+    from common.models import TaskHistory
+    add_to_elapsed_signals = frozenset((
+        signals.SIGNAL_INTERRUPTED,
+        signals.SIGNAL_ERROR,
+        signals.SIGNAL_CANCELED,
+        signals.SIGNAL_COMPLETE,
+    ))
+    recorded_signals = frozenset((
+        signals.SIGNAL_REVOKED,
+        signals.SIGNAL_EXPIRED,
+        signals.SIGNAL_LOCKED,
+        signals.SIGNAL_EXECUTING,
+        signals.SIGNAL_RETRYING,
+    )) | add_to_elapsed_signals
+    storage_key = f'{storage_key_prefix}{task_obj.id}'
+    task_obj_attr = '_signals_history'
+
+    history = getattr(task_obj, task_obj_attr, None)
+    if history is None:
+        # pull it from storage, or initialize it
+        history = huey.get(
+            key=storage_key,
+            peek=True,
+        ) or dict(
+            created=signal_dt,
+            data=task_obj.data,
+            elapsed=0,
+            module=task_obj.__module__,
+            name=task_obj.name,
+        )
+        setattr(task_obj, task_obj_attr, history)
+    assert history is not None
+    history['modified'] = signal_dt
+
+    if signal_name in recorded_signals:
+        history[signal_name] = signal_time
+    if signal_name in add_to_elapsed_signals and signals.SIGNAL_EXECUTING in history:
+        history['elapsed'] += signal_time - history[signals.SIGNAL_EXECUTING]
+    if signals.SIGNAL_COMPLETE in history:
+        huey.get(key=storage_key)
+    else:
+        huey.put(key=storage_key, data=history)
+    th, created = TaskHistory.objects.get_or_create(
+        task_id=str(task_obj.id),
+        name=f"{task_obj.__module__}.{task_obj.name}",
+        queue=huey.name,
+    )
+    th.priority = task_obj.priority
+    th.task_params = list((
+        list(task_obj.args),
+        repr(task_obj.kwargs),
+    ))
+    if signal_name == signals.SIGNAL_EXECUTING:
+        th.attempts += 1
+        th.start_at = signal_dt
+    elif exception_obj is not None:
+        th.failed_at = signal_dt
+        th.last_error = str(exception_obj)
+    elif signal_name == signals.SIGNAL_ENQUEUED:
+        from sync.models import Media, Source
+        if not th.verbose_name and task_obj.args:
+            key = task_obj.args[0]
+            for model in (Media, Source,):
+                try:
+                    model_instance = model.objects.get(pk=key)
+                except model.DoesNotExist:
+                    pass
+                else:
+                    if hasattr(model_instance, 'key'):
+                        th.verbose_name = f'{th.name} with: {model_instance.key}'
+                        if hasattr(model_instance, 'name'):
+                            th.verbose_name += f' / {model_instance.name}'
+    elif signal_name == signals.SIGNAL_SCHEDULED:
+        if huey.utc:
+            th.scheduled_at = task_obj.eta.replace(tzinfo=datetime.UTC)
+        else: # this path is unlikely
+            th.scheduled_at = timestamp_to_datetime(
+                datetime_to_timestamp(task_obj.eta, integer=False),
+            ).astimezone(tz=datetime.UTC)
+    th.end_at = signal_dt
+    th.elapsed = history['elapsed']
+    th.save()
+
 # Registration of shared signal handlers
 
 def register_huey_signals():
-    from django_huey import DJANGO_HUEY, signal
+    from django_huey import DJANGO_HUEY, get_queue, signal
     for qn in DJANGO_HUEY.get('queues', dict()):
         signal(signals.SIGNAL_INTERRUPTED, queue=qn)(on_interrupted)
+        signal(queue=qn)(historical_task)
+
+        # clean up old history and results from storage
+        q = get_queue(qn)
+        now_time = utils.time_clock()
+        for key in q.all_results().keys():
+            if not key.startswith(storage_key_prefix):
+                continue
+            history = q.get(peek=True, key=key)
+            if not isinstance(history, dict):
+                continue
+            age = datetime.timedelta(
+                seconds=(now_time - history.get(signals.SIGNAL_EXECUTING, now_time)),
+            )
+            if age > datetime.timedelta(days=7):
+                result_key = key[len(storage_key_prefix) :]
+                q.get(peek=False, key=result_key)
+                q.get(peek=False, key=key)
 

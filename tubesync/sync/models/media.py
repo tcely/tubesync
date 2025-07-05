@@ -542,6 +542,7 @@ class Media(models.Model):
         return {
             'yyyymmdd': dateobj.strftime('%Y%m%d'),
             'yyyy_mm_dd': dateobj.strftime('%Y-%m-%d'),
+            'yyyy_0mm_dd': dateobj.strftime('%Y-0%m-%d'),
             'yyyy': dateobj.strftime('%Y'),
             'mm': dateobj.strftime('%m'),
             'dd': dateobj.strftime('%d'),
@@ -722,8 +723,19 @@ class Media(models.Model):
 
     @property
     def slugtitle(self):
-        replaced = self.title.replace('_', '-').replace('&', 'and').replace('+', 'and')
-        return slugify(replaced)[:80]
+        transtab = str.maketrans({
+            '&': 'and', '+': 'and',
+        })
+        slugified = slugify(
+            self.title.translate(transtab),
+            allow_unicode=True,
+        )
+        encoding = os.sys.getfilesystemencoding()
+        decoded = slugified.encode(
+            encoding=encoding,
+            errors='ignore',
+        ).decode(encoding=encoding)
+        return decoded[:80]
 
     @property
     def thumbnail(self):
