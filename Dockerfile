@@ -341,26 +341,6 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
   apt-get -y autoclean && \
   rm -v -f /var/cache/debconf/*.dat-old
 
-FROM tubesync-base AS tubesync-prepare-app
-
-COPY tubesync /app
-
-RUN \
-    --mount=type=bind,source=fontawesome-free,target=/fontawesome-free \
-  set -x && \
-  # turn any symbolic links into files
-  ( \
-    cd /app && \
-      find . -type l -print0 | \
-      tar --null -ch --files-from=- | \
-      tar --unlink-first -xvvp ; \
-  ) && \
-  rm -v /app/tubesync/local_settings.py.example && \
-  mv -v /app/tubesync/local_settings.py.container /app/tubesync/local_settings.py
-
-FROM scratch AS tubesync-app
-COPY --from=tubesync-prepare-app /app /app
-
 # The preference for openresty over nginx,
 # is for the newer version.
 FROM tubesync-openresty AS tubesync
