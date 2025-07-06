@@ -507,7 +507,9 @@ COPY tubesync /app
 COPY tubesync/tubesync/local_settings.py.container /app/tubesync/local_settings.py
 
 # Build app
-RUN set -x && \
+RUN \
+    --mount=type=bind,source=fontawesome-free,target=/fontawesome-free \
+  set -x && \
   # Make absolutely sure we didn't accidentally bundle a SQLite dev database
   test '!' -e /app/db.sqlite3 && \
   # Run any required app commands
