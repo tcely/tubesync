@@ -512,6 +512,10 @@ RUN \
   set -x && \
   # Make absolutely sure we didn't accidentally bundle a SQLite dev database
   test '!' -e /app/db.sqlite3 && \
+  # turn any symbolic links into files
+  find /app/common/static -type l -print0 | \
+    tar --null -ch --files-from=- | \
+    tar --unlink-first -xvvp
   # Run any required app commands
   /usr/bin/python3 -B /app/manage.py compilescss && \
   /usr/bin/python3 -B /app/manage.py collectstatic --no-input --link && \
