@@ -322,6 +322,26 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
   apt-get -y autoclean && \
   rm -v -f /var/cache/debconf/*.dat-old
 
+FROM tubesync-base AS tubesync-prepare-app
+
+COPY tubesync /app
+
+RUN \
+    --mount=type=bind,source=fontawesome-free,target=/fontawesome-free \
+  set -x && \
+  # turn any symbolic links into files
+  ( \
+    cd /app && \
+      find . -type l -print0 | \
+      tar --null -ch --files-from=- | \
+      tar --unlink-first -xvvp ; \
+  ) && \
+  rm -v /app/tubesync/local_settings.py.example && \
+  mv -v /app/tubesync/local_settings.py.container /app/tubesync/local_settings.py
+
+FROM scratch AS tubesync-app
+COPY --from=tubesync-prepare-app /app /app
+
 # The preference for openresty over nginx,
 # is for the newer version.
 FROM tubesync-openresty AS tubesync
@@ -503,22 +523,12 @@ COPY patches/yt_dlp/ \
     /usr/local/lib/python3/dist-packages/yt_dlp/
 
 # Copy app
-COPY tubesync /app
-COPY tubesync/tubesync/local_settings.py.container /app/tubesync/local_settings.py
+COPY --from=tubesync-app /app /app
 
 # Build app
-RUN \
-    --mount=type=bind,source=fontawesome-free,target=/fontawesome-free \
-  set -x && \
+RUN set -x && \
   # Make absolutely sure we didn't accidentally bundle a SQLite dev database
   test '!' -e /app/db.sqlite3 && \
-  # turn any symbolic links into files
-  ( \
-    cd /app/common/static && \
-      find . -type l -print0 | \
-      tar --null -ch --files-from=- | \
-      tar --unlink-first -xvvp ; \
-  ) && \
   # Run any required app commands
   /usr/bin/python3 -B /app/manage.py compilescss && \
   /usr/bin/python3 -B /app/manage.py collectstatic --no-input --link && \
