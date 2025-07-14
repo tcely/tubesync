@@ -132,9 +132,7 @@ def parse_database_connection_string(database_connection_string):
         'mysql': {
             'CONN_MAX_AGE': 300,
         },
-        'postgresql': {
-            'CONN_HEALTH_CHECKS': True,
-        },
+        'postgresql': dict(),
     }
     try:
         parts = urlparse(str(database_connection_string))
@@ -194,6 +192,7 @@ def parse_database_connection_string(database_connection_string):
         'PASSWORD': password,
         'HOST': hostname,
         'PORT': port,
+        'CONN_HEALTH_CHECKS': True,
         'CONN_MAX_AGE': 0,
         'OPTIONS': backend_options.get(driver),
     }
