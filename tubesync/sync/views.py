@@ -530,24 +530,27 @@ class MediaView(ListView):
 
     def get_queryset(self):
         q = Media.objects.all()
+        md_qs = Metadata.objects.all()
 
         if self.filter_source:
             q = q.filter(source=self.filter_source)
         if self.query:
             needle = self.query
+            md_q = md_qs.filter(
+                Q(media__in=q) &
+                (
+                    Q(key__contains=needle) |
+                    Q(media__title__icontains=needle) |
+                    Q(value__fulltitle__icontains=needle)
+                )
+            ).only('pk')
             if self.search_description:
                 q = q.filter(
-                    Q(new_metadata__value__fulltitle__icontains=needle) |
                     Q(new_metadata__value__description__icontains=needle) |
-                    Q(title__icontains=needle) |
-                    Q(key__contains=needle)
+                    Q(new_metadata__in=md_qs)
                 )
             else:
-                q = q.filter(
-                    Q(new_metadata__value__fulltitle__icontains=needle) |
-                    Q(title__icontains=needle) |
-                    Q(key__contains=needle)
-                )
+                q = q.filter(Q(new_metadata__in=md_qs))
         if self.only_skipped:
             q = q.filter(Q(can_download=False) | Q(skip=True) | Q(manual_skip=True))
         elif not self.show_skipped:
