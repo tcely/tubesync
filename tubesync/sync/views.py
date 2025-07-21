@@ -535,6 +535,7 @@ class MediaView(ListView):
         if self.filter_source:
             q = q.filter(source=self.filter_source)
         if self.query:
+            m_q = q
             needle = self.query
             md_q = md_qs.filter(
                 Q(media__in=q) &
@@ -544,13 +545,9 @@ class MediaView(ListView):
                     Q(value__fulltitle__icontains=needle)
                 )
             ).only('pk')
+            q = q.filter(new_metadata__in=md_qs)
             if self.search_description:
-                q = q.filter(
-                    Q(new_metadata__value__description__icontains=needle) |
-                    Q(new_metadata__in=md_qs)
-                )
-            else:
-                q = q.filter(Q(new_metadata__in=md_qs))
+                q = q.union(m_q.filter(new_metadata__value__description__icontains=needle))
         if self.only_skipped:
             q = q.filter(Q(can_download=False) | Q(skip=True) | Q(manual_skip=True))
         elif not self.show_skipped:
