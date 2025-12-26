@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # check=error=true
 
+ARG BGUTIL_YTDLP_POT_PROVIDER_VERSION="1.2.2"
 ARG FFMPEG_VERSION="N"
 
 ARG ASFALD_VERSION="0.6.0"
@@ -413,6 +414,14 @@ RUN --mount=type=bind,source=fontawesome-free,target=/fontawesome-free \
   ) && \
   rm -v /app/tubesync/local_settings.py.example && \
   mv -v /app/tubesync/local_settings.py.container /app/tubesync/local_settings.py
+
+ARG BGUTIL_YTDLP_POT_PROVIDER_VERSION
+ADD "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/archive/refs/tags/${BGUTIL_YTDLP_POT_PROVIDER_VERSION}.tar.gz" /tmp/
+RUN mkdir -v /tmp/extracted && \
+    tar -C /tmp/extracted/ -xvvpf "/tmp/${BGUTIL_YTDLP_POT_PROVIDER_VERSION}.tar.gz" && \
+    mv -v /tmp/extracted/*/server /app/bgutil-ytdlp-pot-provider/ && \
+    ls -alR /app/bgutil-ytdlp-pot-provider && \
+    rm -rf /tmp/extracted
 
 FROM scratch AS tubesync-app
 COPY --from=tubesync-prepare-app /app /app
