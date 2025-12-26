@@ -658,6 +658,18 @@ COPY patches/yt_dlp/ \
 # Copy app
 COPY --from=tubesync-app /app /app
 
+# Build the bgutil-ytdlp-pot-provider server when deno is bundled
+RUN --mount=type=tmpfs,target=/cache \
+    --mount=type=cache,id=deno-cache,sharing=locked,target=/cache/deno \
+  command -v deno || exit 0 ; \
+  set -x && \
+  DENO_DIR=/cache/deno && export DENO_DIR && \
+  cd /app/bgutil-ytdlp-pot-provider/server && \
+  install -v -t /usr/local/bin ../node && \
+  DENO_COMPAT=1 deno run -A npm:npm ci --no-fund && \
+  DENO_COMPAT=1 deno run -A npm:npm audit fix && \
+  node typescript:/tsc
+
 # Build app
 RUN set -x && \
   # Record the bundled deno version when it was included
