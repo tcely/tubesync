@@ -646,7 +646,7 @@ RUN --mount=type=tmpfs,target=/cache \
   fi
 
 # Bundle deno with the image
-##COPY --from=deno /usr/local/bin/ /usr/local/bin/
+COPY --from=deno /usr/local/bin/ /usr/local/bin/
 
 # Copy root
 COPY config/root /
