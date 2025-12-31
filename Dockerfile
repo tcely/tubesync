@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # check=error=true
 
+ARG BGUTIL_YTDLP_POT_PROVIDER_VERSION="1.2.2"
 ARG FFMPEG_VERSION="N"
 
 ARG ASFALD_VERSION="0.6.0"
@@ -355,7 +356,7 @@ RUN set -eu ; \
 ## COPY --from=s6-overlay-extracted /s6-overlay-rootfs /
 FROM ghcr.io/meeb/s6-overlay:v${S6_VERSION} AS s6-overlay
 
-FROM tubesync-asfald AS quickjs-download
+FROM tubesync-asfald AS quickjs-extracted
 ARG QJS_VERSION
 ARG SHA256_QJS
 
@@ -378,25 +379,24 @@ RUN set -eux ; TMPDIR="${DESTDIR}" ; export TMPDIR ; \
     mkdir -v -p "${DESTDIR}" && cd "${DESTDIR}/" && \
     asfald --hash="${SHA256_QJS}" -- "${QJS_URL}/${QJS_FILE}"
 
-FROM alpine:${ALPINE_VERSION} AS quickjs-extracted
-COPY --from=quickjs-download /downloaded /downloaded
-
-ARG QJS_CHECKSUM_ALGORITHM
-ARG CHECKSUM_ALGORITHM="${QJS_CHECKSUM_ALGORITHM}"
-
-RUN set -eu ; \
-\
-    apk --no-cache --no-progress add "cmd:${CHECKSUM_ALGORITHM}sum" cmd:unzip ; \
+RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/var/lib/apt \
+    --mount=type=cache,id=apt-cache-cache,sharing=private,target=/var/cache/apt \
+    set -eux ; \
+    apt-get update ; \
+    apt-get -y --no-install-recommends install unzip ; \
     mkdir -v /extracted ; \
     cd /extracted ; \
     for f in /downloaded/*.zip ; \
     do \
       unzip "${f}" || exit ; \
     done ; \
-    unset -v f ;
+    unset -v f ; \
+    mkdir -v /assimilated ; \
+    install -v -p -t /assimilated /extracted/qjs ; \
+    /assimilated/qjs --assimilate
 
 FROM scratch AS quickjs
-COPY --from=quickjs-extracted /extracted/qjs /usr/local/sbin/
+COPY --from=quickjs-extracted /assimilated/qjs /usr/local/sbin/
 
 FROM tubesync-base AS tubesync-prepare-app
 
@@ -413,6 +413,14 @@ RUN --mount=type=bind,source=fontawesome-free,target=/fontawesome-free \
   ) && \
   rm -v /app/tubesync/local_settings.py.example && \
   mv -v /app/tubesync/local_settings.py.container /app/tubesync/local_settings.py
+
+ARG BGUTIL_YTDLP_POT_PROVIDER_VERSION
+ADD "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/archive/refs/tags/${BGUTIL_YTDLP_POT_PROVIDER_VERSION}.tar.gz" /tmp/
+RUN mkdir -v /tmp/extracted && \
+    tar -C /tmp/extracted/ -xvvpf "/tmp/${BGUTIL_YTDLP_POT_PROVIDER_VERSION}.tar.gz" && \
+    mv -v /tmp/extracted/*/server /app/bgutil-ytdlp-pot-provider/ && \
+    ls -alR /app/bgutil-ytdlp-pot-provider && \
+    rm -rf /tmp/extracted
 
 FROM scratch AS tubesync-app
 COPY --from=tubesync-prepare-app /app /app
@@ -529,7 +537,6 @@ RUN --mount=type=cache,id=apt-lib-cache-${TARGETARCH},sharing=private,target=/va
     /usr/local/bin/ffmpeg -version && \
     file /usr/local/bin/ff* && \
     # Installed quickjs (using COPY earlier)
-    /usr/local/sbin/qjs --assimilate && \
     /usr/local/sbin/qjs --help | grep -Fe 'QuickJS version' && \
     file /usr/local/sbin/qjs && \
     # Clean up file
@@ -648,6 +655,24 @@ COPY patches/yt_dlp/ \
 
 # Copy app
 COPY --from=tubesync-app /app /app
+
+# Build the bgutil-ytdlp-pot-provider server when deno is bundled
+RUN --mount=type=tmpfs,target=/cache \
+    --mount=type=cache,id=deno-cache,sharing=locked,target=/cache/deno \
+  command -v deno || exit 0 ; \
+  # python might be used, so keep the .pyc files in /cache
+  PYTHONPYCACHEPREFIX='/cache/pycache' && export PYTHONPYCACHEPREFIX && \
+  set -x && \
+  XDG_CACHE_HOME='/cache' && export XDG_CACHE_HOME && \
+  DENO_DIR='/cache/deno' && export DENO_DIR && \
+  cd /app/bgutil-ytdlp-pot-provider/server && \
+  install -v -t /usr/local/bin ../node && \
+  mkdir -v -p /cache/.home-directories && \
+  cp -at /cache/.home-directories/ "${HOME}" && \
+  HOME="/cache/.home-directories/${HOME#/}" && \
+  DENO_COMPAT=1 deno run -A npm:npm ci --no-audit --no-fund && \
+  DENO_COMPAT=1 deno run -A npm:npm audit fix && \
+  node npm:typescript/tsc
 
 # Build app
 RUN set -x && \
