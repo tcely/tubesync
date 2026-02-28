@@ -1,16 +1,29 @@
 #!/usr/bin/perl
+# ======================================================================
+# NAME: fettle.pl (Dynamic via $me)
+# PURPOSE: A high-integrity utility for making exact, precise, and
+#          repeatable changes to files using only perl-base.
+# ======================================================================
 use strict;
 use warnings;
 use Getopt::Long;
 use File::Basename;
 
-# --- 0. Minimal Native Copy ---
+# Identify the script name dynamically for usage and error reporting
+my $me = basename($0);
+
+# --- 1. Global Constants & Indices ---
+# Stat array indices for readability and easy maintenance
+my $ST_SIZE  = 7;
+my $ST_MTIME = 9;
+
+# --- 2. Minimal Native Copy ---
 # Performs a binary-safe copy without external dependencies.
 # Used for creating temporary work files and original backups.
 sub native_copy {
     my ($source_path, $destination_path) = @_;
-    open(my $in,  '<', $source_path)      or die "Could not read $source_path: $!";
-    open(my $out, '>', $destination_path) or die "Could not write $destination_path: $!";
+    open(my $in,  '<', $source_path)      or die "$me: Could not read $source_path: $!";
+    open(my $out, '>', $destination_path) or die "$me: Could not write $destination_path: $!";
     binmode($in);
     binmode($out);
     print $out $_ while <$in>;
@@ -18,7 +31,7 @@ sub native_copy {
     close($out);
 }
 
-# --- 1. Consolidated Hashing Helpers ---
+# --- 3. Hashing Helpers ---
 # Internal helper to get a file's fingerprint using the system 'cksum' utility.
 sub _get_digest {
     my ($file_path, $algo) = @_;
@@ -35,7 +48,7 @@ sub _get_digest {
 sub get_patch_id { return _get_digest(shift, "sha1"); }
 sub get_file_fingerprint { return _get_digest(shift, "sha512"); }
 
-# --- 2. Configuration & Globals ---
+# --- 4. Configuration & Globals ---
 # Default fuzz_range allows the patcher to look 25 lines up/down for a match.
 my ($dry_run, $revert, $clean, $fuzz_range) = (0, 0, 0, 25);
 GetOptions(
@@ -45,9 +58,9 @@ GetOptions(
     "clean"   => \$clean       # Delete .orig backups
 );
 
-my $patch_file = $ARGV[0] or die "Usage: $0 [--dry-run|--revert|--clean] <patch_file>\n";
+my $patch_file = $ARGV[0] or die "Usage: $me [--dry-run|--revert|--clean] <patch_file>\n";
 my $patch_hash = get_patch_id($patch_file);
-die "Could not generate ID for patch file.\n" unless $patch_hash;
+die "$me: Could not generate ID for patch file.\n" unless $patch_hash;
 
 # Locate a writable directory for state tracking, preferring /cache if on a tmpfs mount.
 my $state_directory;
@@ -60,15 +73,14 @@ if (open(my $mount_fh, '<', '/proc/mounts')) {
     }
     close($mount_fh);
 }
-# Fallback chain: Detected /cache -> TMPDIR -> Current Directory.
 $state_directory ||= ($ENV{TMPDIR} && -d $ENV{TMPDIR} && -w _) ? $ENV{TMPDIR} : ".";
 
-my $state_file = "$state_directory/.patch_state_$patch_hash";
+my $state_file = "$state_directory/.${me}_state_${patch_hash}";
 my $temp_suffix = substr($patch_hash, 0, 11);
 
-# --- 3. Patch Parsing ---
+# --- 5. Patch Parsing ---
 # Scans the patch file to build a map of files to be modified and their hunks.
-open(my $patch_fh, '<', $patch_file) or die "Cannot open patch: $!\n";
+open(my $patch_fh, '<', $patch_file) or die "$me: Cannot open patch: $!\n";
 my %patches;
 my $current_file;
 my $is_git_format = 0;
@@ -111,7 +123,7 @@ while (my $line = <$patch_fh>) {
 }
 close($patch_fh);
 
-# --- 4. Clean and Revert ---
+# --- 6. Clean and Revert ---
 # Logic for cleaning up or rolling back previously applied patches using the state file.
 my %state_metadata;
 if (-e $state_file) {
@@ -144,7 +156,7 @@ if ($clean || $revert) {
     unlink($state_file) if -e $state_file; exit 0;
 }
 
-# --- 5. Hunk Matching Engine ---
+# --- 7. Hunk Matching Engine ---
 # Finds the correct line index in a file to apply a hunk, accounting for line drifts.
 sub find_hunk_index {
     my ($file_content, $hunk_lines, $start_pos) = @_;
@@ -174,10 +186,10 @@ sub verify_context {
     return 1;
 }
 
-# --- 6. Dry Run ---
+# --- 8. Dry Run ---
 # Pre-validation phase: Checks if all hunks can be matched and records offsets.
 if ($dry_run) {
-    open(my $sf_out, '>', $state_file) or die "Cannot create state file: $!\n";
+    open(my $sf_out, '>', $state_file) or die "$me: Cannot create state file: $!\n";
     print $sf_out "CKSUM:$patch_hash\n";
     foreach my $f (sort keys %patches) {
         if ($patches{$f}{deleted}) { print "DELETE: $f\n"; next; }
@@ -193,7 +205,7 @@ if ($dry_run) {
                 } else { $failed = 1; }
             }
             # Save metadata to ensure the file hasn't changed between dry-run and apply.
-            print $sf_out "$f|$stats[9]|$stats[7]|" . join(",", @offsets) . "|EXISTING|$file_hash\n" unless $failed;
+            print $sf_out "$f|$stats[$ST_MTIME]|$stats[$ST_SIZE]|" . join(",", @offsets) . "|EXISTING|$file_hash\n" unless $failed;
             print(($failed ? "FAIL:   " : "READY:  ") . "$f\n");
         } elsif (!-e $f) {
             print $sf_out "$f|0|0||NEW|\n"; print "CREATE: $f\n";
@@ -202,7 +214,7 @@ if ($dry_run) {
     close($sf_out); exit 0;
 }
 
-# --- 7. Execution ---
+# --- 9. Execution ---
 # Load offsets/hashes generated during the Dry Run to ensure consistent application.
 my %stabilized_data;
 if (-e $state_file) {
@@ -263,6 +275,7 @@ eval {
 
         my @file_lines = (-e $target) ? do { open(my $fh, '<', $target); <$fh> } : ();
         my @hunks   = @{$patches{$target}{hunks} // []};
+        # Accessing metadata status/hash relative to the end of the stored list
         my @offsets = defined $stabilized_data{$target} ? @{$stabilized_data{$target}}[0..$#{$stabilized_data{$target}}-2] : ();
         my $suppress_final_newline = 0;
 
@@ -299,18 +312,20 @@ eval {
         close($out_fh);
         rename($temp_work_file, $target) or die "Commit failed: $target\n";
     }
+
     # Clean up files marked for deletion after successful application.
     foreach my $f_to_del (@deferred_unlinks) {
-        unlink($f_to_del) or warn "Unlink failed: $f_to_del: $!\n";
+        unlink($f_to_del) or warn "$me: Unlink failed: $f_to_del: $!\n";
     }
 };
 
 # Rollback Logic: Restores files to their state before the script began if an error occurred.
 if ($@) {
-    warn "Application Error: $@. Rolling back changes...\n";
+    warn "$me: Application Error: $@. Rolling back changes...\n";
     foreach my $f (@processed_files) {
         my $orig = "$f.orig";
         if (-e $orig) {
+            # Accessing metadata status relative to the end of the stored list
             my $status = defined $stabilized_data{$f} ? $stabilized_data{$f}[-2] : "EXISTING";
             if ($status eq "NEW") { unlink($f) if -e $f; unlink($orig); }
             else { rename($orig, $f); }
