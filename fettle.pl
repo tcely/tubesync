@@ -85,6 +85,14 @@ my $temp_suffix = substr($patch_hash, 0, 11);
 # --- 5. Patch Parsing ---
 # Scans the patch file to build a map of files to be modified and their hunks.
 open(my $patch_fh, '<', $patch_file) or die "$me: Cannot open patch: $!\n";
+binmode($patch_fh);
+read($patch_fh, my $buffer, 2);
+close($patch_fh);
+if (defined $buffer && $buffer eq "\x1f\x8b") {
+    open($patch_fh, "-|", "/usr/bin/gzip", "-dc", "--", $patch_file) or die "$me: Cannot open patch using zcat: $!";
+} else {
+    open($patch_fh, '<', $patch_file) or die "$me: Cannot open patch: $!\n";
+}
 my %patches;
 my $current_file;
 my $is_git_format = 0;
