@@ -37,8 +37,12 @@ sub _get_digest {
     my ($file_path, $algo) = @_;
     return "" unless -f $file_path;
     # Executes system cksum with specified algorithm (e.g., sha1, sha512).
-    my $cksum_output = `/usr/bin/cksum -a $algo "$file_path"`;
+    # Safely open a pipe without invoking a shell
+    open(my $pipe, "-|", "/usr/bin/cksum", "-a", $algo, $file_path) or return "";
+    my $cksum_output = <$pipe>;
+    close($pipe);
     chomp($cksum_output);
+    return "" unless $cksum_output;
     # Extract only the hex fingerprint from the tool's output.
     my ($fingerprint) = $cksum_output =~ /=\s+([a-f0-9]+)/i;
     return $fingerprint || "";
@@ -140,7 +144,9 @@ if ($clean || $revert) {
     print(($clean ? "Cleaning backups...\n" : "Reverting to original state...\n"));
     foreach my $target (keys %patches) {
         my $backup = "$target.orig";
-        if ($clean && -e $backup) { unlink($backup); }
+        if ($clean && -e $backup) {
+            unlink($backup) or warn "$me: Failed to delete $backup: $!\n";
+        }
         elsif ($revert && -e $backup) {
             # If the file was created by the patch, remove it entirely.
             if ($state_metadata{$target} && $state_metadata{$target}{status} eq "NEW") {
@@ -148,7 +154,7 @@ if ($clean || $revert) {
                 print "  Removed created file: $target\n";
             } else {
                 # Restore existing files from their .orig backup.
-                rename($backup, $target);
+                rename($backup, $target) or die "$me: Critical failure restoring $target: $!\n";
                 print "  Restored: $target\n";
             }
         }
