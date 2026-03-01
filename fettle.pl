@@ -317,7 +317,8 @@ eval {
 
             $suppress_final_newline = 1 if $i == $#hunks && $h->{no_eof_newline};
 
-            my (@transformed, $removed_count) = ((), 0);
+            my @transformed = ();
+            my $removed_count = 0;
             foreach my $line (@{$h->{lines}}) {
                 my $ind  = substr($line, 0, 1);
                 print ("ind: {" . $ind . "}\n");
