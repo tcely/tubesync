@@ -118,7 +118,7 @@ while (my $line = <$patch_fh>) {
     }
     # Capture hunk headers: @@ -old_start,len +new_start,len @@
     # Handle hunk header with optional counts (default to 1)
-    elsif ($current_file && $line =~ /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/) {
+    elsif ($current_file && $line =~ /^@@ \-(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/) {
         push @{$patches{$current_file}{hunks}}, {
             old_start      => $1,
             old_count      => $2 // 1, # Default to 1 if count is missing
@@ -311,7 +311,8 @@ eval {
         # Apply hunks in reverse order to keep line indices stable for earlier hunks.
         for (my $i = $#hunks; $i >= 0; $i--) {
             my $h = $hunks[$i];
-            my $match_idx = (@file_lines) ? (defined $offsets[$i] ? ($h->{old_start}-1+$offsets[$i]) : find_hunk_index(\@file_lines, $h->{lines}, $h->{old_start}-1)) : 0;
+            my $zi_ln = $h->{old_start} - 1;
+            my $match_idx = (@file_lines) ? (defined $offsets[$i] ? ($zi_ln+$offsets[$i]) : find_hunk_index(\@file_lines, $h->{lines}, $zi_ln)) : 0;
             die "Match failed during apply: $target\n" unless defined $match_idx;
 
             $suppress_final_newline = 1 if $i == $#hunks && $h->{no_eof_newline};
@@ -319,16 +320,17 @@ eval {
             my (@transformed, $removed_count) = ((), 0);
             foreach my $line (@{$h->{lines}}) {
                 my $ind  = substr($line, 0, 1);
+                print ("ind: {" . $ind . "}\n");
                 my $text = (length($line) > 1) ? substr($line, 1) : "";
                 $text =~ s/\r?[\n]+$//;
                 $text = ($text . "\n");
+                print ("text {" . $text . "}\n") if $ind ne '-';
                 # not '+' lines increment the removal count; '+' lines are added to the list.
                 if ($ind eq ' ' || $ind eq '-') {
                     $removed_count++;
                     push @transformed, $text if $ind eq ' ';
                 }
                 elsif ($ind eq '+') { push @transformed, $text; }
-                print $ind . $text;
             }
             # Use splice to replace the matched block with the new transformed lines.
             splice(@file_lines, $match_idx, $removed_count, @transformed);
