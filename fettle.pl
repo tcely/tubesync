@@ -320,20 +320,18 @@ eval {
             my ($removed_count, @transformed) = (0, ());
             foreach my $line (@{$h->{lines}}) {
                 my $ind  = substr($line, 0, 1);
-                print ("ind: {" . $ind . "}\n");
                 my $text = (length($line) > 1) ? substr($line, 1) : "";
                 $text =~ s/\r?[\n]+$//;
                 $text = ($text . "\n");
-                print ("text {" . $text . "}\n") if $ind ne '-';
-                # not '+' lines increment the removal count; '+' lines are added to the list.
-                if ($ind eq ' ' || $ind eq '-') {
+                # '-' lines are not added to the list
+                # '+' lines do not increment the removal count
+                if ('-' eq $ind || ' ' eq $ind) {
                     $removed_count++;
-                    push @transformed, $text if $ind eq ' ';
+                    push @transformed, $text if ' ' eq $ind;
                 }
-                elsif ($ind eq '+') { push @transformed, $text; }
+                elsif ('+' eq $ind) { push @transformed, $text; }
             }
             # Use splice to replace the matched block with the new transformed lines.
-            print "DEBUG: match_idx=$match_idx count=$removed_count content='" . join('', @transformed) . "'\n";
             splice(@file_lines, $match_idx, $removed_count, @transformed);
         }
 
