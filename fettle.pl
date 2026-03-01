@@ -100,6 +100,7 @@ my $is_git_format = 0;
 while (my $line = <$patch_fh>) {
     # Detects git-style diff headers to properly handle additions/deletions.
     if ($line =~ /^diff --git\s+a\/.+?\s+b\/.+$/) {
+        undef $current_file; # Reset context for high-integrity parsing
         $is_git_format = 1; next;
     }
     elsif ($is_git_format && $line =~ /^deleted file mode/) {
@@ -116,10 +117,14 @@ while (my $line = <$patch_fh>) {
         else { $current_file = $path; $patches{$current_file}{deleted} = 0; }
     }
     # Capture hunk headers: @@ -old_start,len +new_start,len @@
-    elsif ($current_file && $line =~ /^@@ -(\d+),?\d*? \+(\d+),?\d*? @@/) {
+    # Handle hunk header with optional counts (default to 1)
+    elsif ($current_file && $line =~ /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/) {
         push @{$patches{$current_file}{hunks}}, {
-            old_start => $1,
-            lines => [],
+            old_start      => $1,
+            old_count      => $2 // 1, # Default to 1 if count is missing
+            new_start      => $3,
+            new_count      => $4 // 1, # Default to 1 if count is missing
+            lines          => [],
             no_eof_newline => 0
         };
     }
@@ -199,10 +204,11 @@ sub find_hunk_index {
 # Helper to verify if the hunk's context matches the actual file content at a given index.
 sub verify_context {
     my ($lines, $search, $idx) = @_;
-    return 0 if $idx < 0 || ($idx + scalar @$search) > scalar @$lines;
-    for (my $i = 0; $i < scalar @$search; $i++) {
-        my $f_text = $lines->[$idx + $i]; $f_text =~ s/[\r\n]+$//;
-        my $h_text = substr($search->[$i], 1); $h_text =~ s/[\r\n]+$//;
+    my $search_size = scalar @$search;
+    return 0 if $idx < 0 || ($idx + $search_size) > scalar @$lines;
+    for (my $i = 0; $i < $search_size; $i++) {
+        my $f_text = $lines->[$idx + $i]; $f_text =~ s/[\r]?$//;
+        my $h_text = substr($search->[$i], 1); $h_text =~ s/[\r]?$//;
         return 0 if $f_text ne $h_text;
     }
     return 1;
