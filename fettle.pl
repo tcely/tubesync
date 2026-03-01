@@ -142,6 +142,7 @@ if (-e $state_file) {
 
 if ($clean || $revert) {
     print(($clean ? "Cleaning backups...\n" : "Reverting to original state...\n"));
+    my $errors = 0;
     foreach my $target (keys %patches) {
         my $backup = "$target.orig";
         if ($clean && -e $backup) {
