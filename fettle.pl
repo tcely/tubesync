@@ -320,7 +320,7 @@ eval {
             foreach my $line (@{$h->{lines}}) {
                 my $ind  = substr($line, 0, 1);
                 my $text = (length($line) > 1) ? substr($line, 1) : "";
-                $text =~ s/[\r]?$//;
+                $text =~ s/\r?[\n]+$//;
                 $text = ($text . "\n");
                 # not '+' lines increment the removal count; '+' lines are added to the list.
                 if ($ind eq ' ' || $ind eq '-') {
@@ -338,7 +338,7 @@ eval {
         # Writes the fully patched result to a temp file, then swaps it with the target.
         open(my $out_fh, '>', $temp_work_file) or die "Write temp failed: $target\n";
         for (my $i = 0; $i <= $#file_lines; $i++) {
-            my $l = $file_lines[$i]; $l =~ s/[\r]?$//;
+            my $l = $file_lines[$i]; $l =~ s/\r?[\n]+$//;
             print $out_fh ($i == $#file_lines && $suppress_final_newline) ? $l : $l . "\n";
         }
         close($out_fh);
