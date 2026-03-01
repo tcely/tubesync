@@ -319,9 +319,9 @@ eval {
             foreach my $line (@{$h->{lines}}) {
                 my ($ind, $text) = (substr($line, 0, 1), substr($line, 1));
                 $text =~ s/[\r\n]+$//;
-                # '-' lines increment the removal count; '+' lines are added to the list.
+                # not '+' lines increment the removal count; '+' lines are added to the list.
                 if ($ind eq ' ' || $ind eq '-') {
-                    $removed_count++ if $ind eq '-';
+                    $removed_count++;
                     push @transformed, $text . "\n" if $ind eq ' ';
                 }
                 elsif ($ind eq '+') { push @transformed, $text . "\n"; }
