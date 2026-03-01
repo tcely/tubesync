@@ -318,7 +318,8 @@ eval {
 
             my (@transformed, $removed_count) = ((), 0);
             foreach my $line (@{$h->{lines}}) {
-                my ($ind, $text) = (substr($line, 0, 1), substr($line, 1));
+                my $ind  = substr($line, 0, 1);
+                my $text = (length($line) > 1) ? substr($line, 1) : "";
                 $text =~ s/[\r]?$//;
                 # not '+' lines increment the removal count; '+' lines are added to the list.
                 if ($ind eq ' ' || $ind eq '-') {
