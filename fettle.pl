@@ -333,6 +333,7 @@ eval {
                 elsif ($ind eq '+') { push @transformed, $text; }
             }
             # Use splice to replace the matched block with the new transformed lines.
+            print "DEBUG: match_idx=$match_idx count=$removed_count content='" . join('', @transformed) . "'\n";
             splice(@file_lines, $match_idx, $removed_count, @transformed);
         }
 
