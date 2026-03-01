@@ -99,11 +99,11 @@ while (my $line = <$patch_fh>) {
     }
     # Parse source ('---') and destination ('+++') file paths.
     elsif ($line =~ /^--- (?:a\/)?(.+)$/) {
-        my $path = $1; $path =~ s/\s+$//;
+        my $path = $1; $path =~ s/(?:\t.*|\s+)$//;
         $current_file = $path unless $path eq '/dev/null';
     }
     elsif ($line =~ /^\+\+\+ (?:b\/)?(.+)$/) {
-        my $path = $1; $path =~ s/\s+$//;
+        my $path = $1; $path =~ s/(?:\t.*|\s+)$//;
         if ($path eq '/dev/null') { $patches{$current_file}{deleted} = 1; }
         else { $current_file = $path; $patches{$current_file}{deleted} = 0; }
     }
