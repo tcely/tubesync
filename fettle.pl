@@ -134,7 +134,8 @@ while (my $line = <$patch_fh>) {
             $patches{$current_file}{hunks}[-1]{no_eof_newline} = 1;
         }
         else {
-            push @{$patches{$current_file}{hunks}[-1]{lines}}, $line if $line =~ /^[ \+\-\\]/;
+            push @{$patches{$current_file}{hunks}[-1]{lines}}, $line if $line =~ /^[ \+\-]/;
+
         }
     }
 }
@@ -318,7 +319,7 @@ eval {
             my (@transformed, $removed_count) = ((), 0);
             foreach my $line (@{$h->{lines}}) {
                 my ($ind, $text) = (substr($line, 0, 1), substr($line, 1));
-                $text =~ s/[\r\n]+$//;
+                $text =~ s/[\r]?$//;
                 # not '+' lines increment the removal count; '+' lines are added to the list.
                 if ($ind eq ' ' || $ind eq '-') {
                     $removed_count++;
