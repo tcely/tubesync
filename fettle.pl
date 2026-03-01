@@ -145,21 +145,28 @@ if ($clean || $revert) {
     foreach my $target (keys %patches) {
         my $backup = "$target.orig";
         if ($clean && -e $backup) {
-            unlink($backup) or warn "$me: Failed to delete $backup: $!\n";
+            unlink($backup) or (warn("$me: Skip delete $backup: $!\n"), $errors++);
         }
         elsif ($revert && -e $backup) {
             # If the file was created by the patch, remove it entirely.
             if ($state_metadata{$target} && $state_metadata{$target}{status} eq "NEW") {
-                unlink($target) if -e $target; unlink($backup);
+                # If the patch created it, delete it
+                (unlink($target) or $errors++) if -e $target;
+                unlink($backup) or $errors++;
                 print "  Removed created file: $target\n";
             } else {
                 # Restore existing files from their .orig backup.
-                rename($backup, $target) or die "$me: Critical failure restoring $target: $!\n";
+                # Attempt restoration of all files regardless of individual failures
+                rename($backup, $target) or (warn("$me: Failed to restore $target: $!\n"), $errors++);
                 print "  Restored: $target\n";
             }
         }
     }
-    unlink($state_file) if -e $state_file; exit 0;
+
+    unlink($state_file) if -e $state_file && $errors == 0;
+
+    # Exit with non-zero status if any part of the operation failed
+    exit($errors > 0 ? 1 : 0);
 }
 
 # --- 7. Hunk Matching Engine ---
