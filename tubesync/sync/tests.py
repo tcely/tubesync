@@ -715,6 +715,34 @@ class FilepathTestCase(TestCase):
         self.assertEqual(downloaded_premium.format_dict['resolution'], '1080p')
         self.assertEqual(downloaded_premium.filename, '1080p.mkv')
 
+        # verify audio-only downloads still work as expected
+        self.source.source_resolution=Val(SourceResolution.AUDIO)
+        downloaded_audio = create_media(
+            'downloadedaudio',
+            'issue499_audio_only',
+            downloaded_fields=dict(
+                downloaded=True,
+                download_date=timezone.now(),
+                downloaded_format=Val(SourceResolution.AUDIO),
+                downloaded_height=1080,
+                downloaded_width=1920,
+                downloaded_audio_codec='OPUS',
+                downloaded_video_codec='vp9',
+                downloaded_container='ogg',
+                downloaded_fps=50,
+                downloaded_hdr=False,
+                downloaded_filesize=123,
+            ),
+        )
+        self.assertEqual(downloaded_audio.downloaded, True)
+        self.assertEqual(downloaded_audio.downloaded_width, 1920)
+        self.assertEqual(downloaded_audio.downloaded_height, 1080)
+        self.assertEqual(downloaded_audio.format_dict['ext'], 'ogg')
+        self.assertEqual(downloaded_audio.format_dict['resolution'], 'audio')
+        self.assertEqual(downloaded_audio.format_dict['height'], '0')
+        self.assertEqual(downloaded_audio.format_dict['width'], '0')
+        self.source.source_resolution=Val(SourceResolution.VIDEO_1080P)
+
     def test_directory_prefix(self):
         # Confirm the setting exists and is valid
         self.assertTrue(hasattr(settings, 'SOURCE_DOWNLOAD_DIRECTORY_PREFIX'))
