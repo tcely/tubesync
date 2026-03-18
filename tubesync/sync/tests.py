@@ -719,7 +719,7 @@ class FilepathTestCase(TestCase):
         self.source.source_resolution=Val(SourceResolution.AUDIO)
         downloaded_audio = create_media(
             'downloadedaudio',
-            'issue499_audio_only',
+            'issue499_1080p50',
             downloaded_fields=dict(
                 downloaded=True,
                 download_date=timezone.now(),
