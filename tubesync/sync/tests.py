@@ -712,7 +712,6 @@ class FilepathTestCase(TestCase):
                 downloaded_filesize=123,
             ),
         )
-        downloaded_premium.downloaded = True
         self.assertEqual(downloaded_premium.format_dict['resolution'], '1080p')
         self.assertEqual(downloaded_premium.filename, '1080p.mkv')
 
