@@ -741,6 +741,42 @@ class TestShasum(unittest.TestCase):
 
         self.assertEqual(code, 0)
 
+    def test_file_deleted_mid_hashing(self):
+        """Resilience: Ensure mid-process deletion doesn't stall the worker pool."""
+        # 1. Setup: 1 'Victim' (2.5MB) and 5 'Canary' fillers
+        victim_name = "vanishing_victim.bin"
+        self.create_file(victim_name, b"V" * 2500000)
+        v_hash = hashlib.sha256(b"V" * 2500000).hexdigest()
+
+        manifest = [f"{v_hash}  {victim_name}\n"]
+        for i in range(5):
+            name = f"canary_{i}.bin"
+            self.create_file(name, b"safe")
+            manifest.append(f"{hashlib.sha256(b'safe').hexdigest()}  {name}\n")
+
+        line_data, _, label = shasum.get_input_and_format(self.create_file("test_res.txt", "".join(manifest).encode()))
+
+        real_path_open = Path.open
+        main_thread_id = threading.get_ident()
+
+        def race_condition_open(path_obj, *args, **kwargs):
+            # Delete the victim ONLY when the worker thread tries to open it
+            if path_obj.name == victim_name and threading.get_ident() != main_thread_id:
+                if os.path.exists(victim_name):
+                    os.remove(victim_name)
+            return real_path_open(path_obj, *args, **kwargs)
+
+        # 2. Execution
+        with patch.object(Path, 'open', side_effect=race_condition_open, autospec=True):
+            code, out, err = self.run_verify(line_data, False, label, "sha256")
+
+        # 3. Validation
+        combined = out + err
+        self.assertIn("FAILED", combined, "The vanished file did not report failure.")
+        # Critical: Ensure the canaries still passed, proving the pool didn't stall
+        self.assertEqual(combined.count("OK"), 5, "Canary files were blocked by the failure.")
+        self.assertEqual(code, 1)
+
     def test_ttfr_responsiveness(self):
         """Metric: Measure TTFR by capturing the timestamp of the first atomic print."""
         # 1. Setup: 1 Large blocker (2MB) and 256 filler files (8k-1)
