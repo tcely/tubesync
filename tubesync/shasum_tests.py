@@ -708,6 +708,39 @@ class TestShasum(unittest.TestCase):
         self.assertGreater(slow_finish_time, 0.45, f"Slow file finished too early: {slow_finish_time:.4f}s")
         self.assertEqual(code, 0)
 
+    def test_concurrency_state_stress(self):
+        """Safety: Stress the locks with a high-volume task storm (512 files)."""
+        # 1. Setup: 512 tiny files (8k - 1)
+        file_count = 512
+        filler_size = (8 * 1024) - 1
+        manifest_lines = []
+
+        for i in range(file_count):
+            name = f"stress_{i}.bin"
+            data = b"s" * filler_size
+            self.create_file(name, data)
+            h = hashlib.sha256(data).hexdigest()
+            manifest_lines.append(f"{h}  {name}\n")
+
+        sums_file = self.create_file("test_stress.txt", "".join(manifest_lines).encode())
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+
+        # 2. Execution
+        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+
+        # 3. Validation
+        output_lines = [l for l in out.splitlines() if "OK" in l]
+
+        # Ensure every single file was processed correctly
+        self.assertEqual(len(output_lines), file_count,
+                         f"Counter mismatch in high-concurrency run. Expected {file_count}, got {len(output_lines)}")
+
+        # Verify no two lines were mangled together
+        for line in output_lines:
+            self.assertTrue(line.strip().endswith("OK"), f"Mangled output detected: {line}")
+
+        self.assertEqual(code, 0)
+
     def test_ttfr_responsiveness(self):
         """Metric: Measure TTFR by capturing the timestamp of the first atomic print."""
         # 1. Setup: 1 Large blocker (2MB) and 256 filler files (8k-1)
