@@ -9,6 +9,7 @@ import queue
 import re
 import sys
 import threading
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,12 +20,18 @@ CHUNK_SIZE = (1024) * 32 # KiB
 PROG_NAME = Path(__file__).stem
 
 # Versioning
-VERSION = (1, 1, 3)
+VERSION = (1, 1, 4)
 VERSION_STR = "v" + ".".join(map(str, VERSION))
 
+# Global locks
+IO_LOCK = threading.Lock()
+STATE_LOCK = threading.Lock()
+
 def _std_base(*args, **kwargs):
+    """Atomic printing to prevent garbled output."""
     try:
-        print(*args, **kwargs)
+        with IO_LOCK:
+            print(*args, **kwargs)
     except BrokenPipeError:
         # Python's recommended way to handle SIGPIPE silently
         # 128 + 13 (SIGPIPE) = 141
@@ -397,12 +404,41 @@ def verify_checksums(line_data, is_tag, label, algorithm):
             exit_code = 1
             stdout(f"{path}: FAILED (Unexpected Error: {e!r})")
 
+    # Sort descending (Largest first) and transfer to deque for O(1) ops
     tasks.sort(key=lambda x: x[0], reverse=True)
+    task_queue = deque(tasks)
+    del tasks
+
+    large_in_progress = False
+    def harvester(future, path, was_large):
+        """Callback to release the 'large file' slot and handle output."""
+        nonlocal large_in_progress
+        harvest(future, path) # Already uses IO_LOCK
+        if was_large:
+            with STATE_LOCK:
+                large_in_progress = False
+
     with ThreadPoolExecutor() as executor:
-        while tasks:
+        while True:
+            # 1. State-locked task retrieval
+            with STATE_LOCK:
+                if not task_queue:
+                    break
+
+                # Heuristic: Take from the left (largest) ONLY if slot is empty
+                # Otherwise, take from the right (smallest) to keep the pool busy
+                if not large_in_progress and len(task_queue) > 1:
+                    task = task_queue.popleft()
+                    large_in_progress = True
+                    is_large = True
+                else:
+                    task = task_queue.pop()
+                    is_large = False
+
+            # 2. Semaphore and submission
             semaphore.acquire()
 
-            _, target_path, stat, expected_hash, buffer, blen = tasks.pop()
+            _, target_path, stat, expected_hash, buffer, blen = task
             if buffer is None:
                 assigned_buffer, actual_read = fill_buffer(target_path, stat=stat)
                 if assigned_buffer and actual_read:
@@ -420,8 +456,11 @@ def verify_checksums(line_data, is_tag, label, algorithm):
                 blen,
                 stat,
             )
-            harvester = lambda f, p=target_path: harvest(f, p)
-            future.add_done_callback(harvester)
+
+            # 3. Bind metadata to callback
+            future.add_done_callback(
+                lambda f, l=is_large, p=target_path: harvester(f, p, l)
+            )
 
     def warning(msg, singular, plural, /, count):
         if 0 < count:
