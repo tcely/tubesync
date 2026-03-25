@@ -655,26 +655,57 @@ class TestShasum(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_ttfr_responsiveness(self):
-        """Metric: Measure TTFR to ensure small files provide instant UI feedback."""
-        large_data = os.urandom(50 * 1024 * 1024)
-        self.create_file("heavy_loader.bin", large_data)
-        l_hash = hashlib.sha256(large_data).hexdigest()
+        """Metric: Measure TTFR by capturing the timestamp of the first atomic print."""
+        # 1. Setup: 1 Large blocker (2MB) and 256 filler files (8k-1)
+        filler_count = 256
+        filler_size = (8 * 1024) - 1
+        self.create_file("blocker.bin", b"B" * 2 * 1024 * 1024)
 
-        manifest = [f"{l_hash}  heavy_loader.bin\n"]
-        for i in range(10):
-            name = f"ui_filler_{i}.bin"
-            self.create_file(name, b"filler")
-            manifest.append(f"{hashlib.sha256(b'filler').hexdigest()}  {name}\n")
+        manifest = f"{hashlib.sha256(b'B'*2*1024*1024).hexdigest()}  blocker.bin\n"
+        for i in range(filler_count):
+            name = f"tiny_{i}.bin"
+            data = b"t" * filler_size
+            self.create_file(name, data)
+            manifest += f"{hashlib.sha256(data).hexdigest()}  {name}\n"
 
-        sums_file = self.create_file("ttfr.txt", "".join(manifest).encode())
-        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+        line_data, _, label = shasum.get_input_and_format(self.create_file("test_ttfr.txt", manifest.encode()))
 
+        first_result_time = None
         start_time = time.perf_counter()
-        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
-        ttfr = time.perf_counter() - start_time
 
-        print(f"   [Metric] TTFR: {ttfr:.4f}s")
-        self.assertLess(ttfr, 0.2)
+        # We wrap the original stdout helper to catch the exact moment of the first print
+        original_std_base = shasum._std_base
+        def timed_std_base(*args, **kwargs):
+            nonlocal first_result_time
+            if first_result_time is None:
+                first_result_time = time.perf_counter()
+            return original_std_base(*args, **kwargs)
+
+        # Proxy to stall the large hash
+        original_new = hashlib.new
+        class TTFRProxy:
+            def __init__(self, real):
+                self.real, self.seen, self.stalled = real, 0, False
+            def update(self, data):
+                self.seen += len(data)
+                if not self.stalled and self.seen > 1024 * 1024:
+                    self.stalled = True
+                    time.sleep(0.4)
+                return self.real.update(data)
+            def hexdigest(self, *args): return self.real.hexdigest(*args)
+
+        # 2. Execution
+        with patch('shasum._std_base', side_effect=timed_std_base):
+            with patch('hashlib.new', side_effect=lambda a, *args, **kwargs: TTFRProxy(original_new(a, *args, **kwargs))):
+                code, out, err = self.run_verify(line_data, False, label, "sha256")
+
+        # 3. Validation
+        actual_ttfr = (first_result_time - start_time) if first_result_time else 999
+        print(f"   [Metric] TTFR (First Print): {actual_ttfr:.4f}s")
+
+        self.assertTrue(out, "No output captured.")
+        self.assertLess(actual_ttfr, 0.2, f"TTFR failed; first result was blocked. Time: {actual_ttfr:.4f}s")
+        self.assertEqual(code, 0)
 
     def test_hashing_performance(self):
         """Performance: Measure throughput and execution time for 100 MiB."""
