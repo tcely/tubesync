@@ -654,6 +654,60 @@ class TestShasum(unittest.TestCase):
         self.assertEqual(max_observed_large, 1, f"Serialization Failed: {max_observed_large} large files ran together.")
         self.assertEqual(code, 0)
 
+    def test_concurrency_during_io_stall(self):
+        """Verify that a slow-reading file does not block other worker threads."""
+        # 1. Setup: 1 'Slow' file (2MB - bypasses fill_buffer) and 256 'Fast' fillers (8k-1)
+        slow_name = "slow_disk_lat.bin"
+        self.create_file(slow_name, b"L" * 2 * 1024 * 1024)
+        l_hash = hashlib.sha256(b"L" * 2 * 1024 * 1024).hexdigest()
+
+        manifest = [f"{l_hash}  {slow_name}\n"]
+        for i in range(256):
+            name = f"fast_{i}.bin"
+            data = b"f" * 8191
+            self.create_file(name, data)
+            manifest.append(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+
+        line_data, _, label = shasum.get_input_and_format(self.create_file("test_lat.txt", "".join(manifest).encode()))
+
+        # PRE-PATCH CAPTURE
+        real_std_base = shasum._std_base
+        real_path_open = Path.open
+        main_thread_id = threading.get_ident() # Capture main thread ID
+
+        first_fast_time = None
+        slow_finish_time = None
+        start_time = time.perf_counter()
+
+        def timed_std_base(*args, **kwargs):
+            nonlocal first_fast_time, slow_finish_time
+            output_str = str(args) if args else ""
+            if "fast_" in output_str and first_fast_time is None:
+                first_fast_time = time.perf_counter() - start_time
+            elif slow_name in output_str:
+                slow_finish_time = time.perf_counter() - start_time
+            return real_std_base(*args, **kwargs)
+
+        def slow_open_proxy(path_obj, *args, **kwargs):
+            # PROTECT MAIN THREAD: Only sleep if it's a worker thread
+            if path_obj.name == slow_name and threading.get_ident() != main_thread_id:
+                time.sleep(0.5)
+            return real_path_open(path_obj, *args, **kwargs)
+
+        # 3. Execution
+        with patch('shasum._std_base', side_effect=timed_std_base):
+            with patch.object(Path, 'open', side_effect=slow_open_proxy, autospec=True):
+                code, out, err = self.run_verify(line_data, False, label, "sha256")
+
+        # 4. Validation
+        self.assertIsNotNone(first_fast_time, f"Fast files blocked. Output: {out}")
+        print(f"   [Metric] TTFR (First Fast): {first_fast_time:.4f}s")
+        print(f"   [Metric] Slow File Finish: {slow_finish_time:.4f}s")
+
+        self.assertLess(first_fast_time, 0.2, f"TTFR too high: {first_fast_time:.4f}s")
+        self.assertGreater(slow_finish_time, 0.45, f"Slow file finished too early: {slow_finish_time:.4f}s")
+        self.assertEqual(code, 0)
+
     def test_ttfr_responsiveness(self):
         """Metric: Measure TTFR by capturing the timestamp of the first atomic print."""
         # 1. Setup: 1 Large blocker (2MB) and 256 filler files (8k-1)
