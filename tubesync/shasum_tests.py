@@ -6,9 +6,10 @@ import tempfile
 import io
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
-from unittest.mock import patch, MagicMock
+from unittest.mock import mock_open, patch, MagicMock
 
 # Ensure shasum.py is in the same directory
 import shasum
@@ -511,6 +512,160 @@ class TestShasum(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 shasum.stdout("test")
             self.assertEqual(cm.exception.code, 141)
+
+    def test_interleaved_scheduling_priority(self):
+        """
+        Priority: Ensure 1 large file doesn't block small files.
+        Heuristic: 1 Large-file slot; Small files backfill.
+        """
+        large_size = 20 * 1024 * 1024
+        small_size = 1024
+        filenames = []
+
+        l_name = "large_anchor.bin"
+        l_data = os.urandom(large_size)
+        self.create_file(l_name, l_data)
+        l_hash = hashlib.sha256(l_data).hexdigest()
+        filenames.append((l_hash, l_name))
+
+        for i in range(10):
+            s_name = f"tiny_filler_{i}.bin"
+            s_data = os.urandom(small_size)
+            self.create_file(s_name, s_data)
+            s_hash = hashlib.sha256(s_data).hexdigest()
+            filenames.append((s_hash, s_name))
+
+        manifest = "".join([f"{h}  {n}\n" for h, n in filenames])
+        sums_file = self.create_file("interleave_test.txt", manifest.encode())
+
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+
+        output_lines = [line for line in out.splitlines() if "OK" in line]
+        self.assertIn("tiny_filler", output_lines[0],
+            "Small files should finish first even if the large one started first.")
+        self.assertEqual(code, 0)
+
+    def test_large_file_slot_serialization(self):
+        """
+        Scheduling: Ensure only one large file is 'active' at a time.
+        """
+        large_size = 20 * 1024 * 1024
+        small_size = 1024
+
+        l1_data = os.urandom(large_size)
+        l1_hash = hashlib.sha256(l1_data).hexdigest()
+        self.create_file("large_1.bin", l1_data)
+
+        l2_data = os.urandom(large_size)
+        l2_hash = hashlib.sha256(l2_data).hexdigest()
+        self.create_file("large_2.bin", l2_data)
+
+        manifest_lines = [f"{l1_hash}  large_1.bin\n", f"{l2_hash}  large_2.bin\n"]
+        for i in range(10):
+            name = f"small_{i}.bin"
+            self.create_file(name, os.urandom(small_size))
+            h = hashlib.sha256(os.urandom(small_size)).hexdigest()
+            manifest_lines.append(f"{h}  {name}\n")
+
+        sums_file = self.create_file("slot_test.txt", "".join(manifest_lines).encode())
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+
+        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+        output_lines = [l for l in out.splitlines() if "OK" in l]
+
+        l1_idx = next(i for i, s in enumerate(output_lines) if "large_1.bin" in s)
+        l2_idx = next(i for i, s in enumerate(output_lines) if "large_2.bin" in s)
+
+        files_between = abs(l1_idx - l2_idx) - 1
+        self.assertGreater(files_between, 0, "Large files were not serialized.")
+        self.assertEqual(code, 0)
+
+    def test_concurrency_state_stress(self):
+        """Safety: Stress the STATE_LOCK and IO_LOCK with a high-volume task storm."""
+        file_count = 500
+        manifest_lines = []
+        for i in range(file_count):
+            name = f"stress_{i}.bin"
+            data = b"constant data"
+            self.create_file(name, data)
+            h = hashlib.sha256(data).hexdigest()
+            manifest_lines.append(f"{h}  {name}\n")
+
+        sums_file = self.create_file("stress_test.txt", "".join(manifest_lines).encode())
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+
+        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+        output_lines = [l for l in out.splitlines() if "OK" in l]
+        self.assertEqual(len(output_lines), file_count)
+        self.assertEqual(code, 0)
+
+    def test_file_deleted_before_hashing(self):
+        """Resilience: Handle a file deleted after manifest parsing."""
+        name = "disappearing_act.bin"
+        data = b"now you see me"
+        self.create_file(name, data)
+        h = hashlib.sha256(data).hexdigest()
+
+        manifest = f"{h}  {name}\n"
+        sums_file = self.create_file("delete_test.txt", manifest.encode())
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+
+        os.remove(Path(name))
+        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+
+        self.assertIn("FAILED", out)
+        self.assertIn("No such file", out)
+        self.assertEqual(code, 1)
+
+    def test_concurrency_during_io_stall(self):
+        """Verify that a slow-reading large file does not block small files."""
+        large_name = "stalled_large.bin"
+        self.create_file(large_name, b"L" * 1024)
+        l_hash = hashlib.sha256(b"L" * 1024).hexdigest()
+
+        manifest = [f"{l_hash}  {large_name}\n"]
+        for i in range(3):
+            name = f"fast_small_{i}.bin"
+            self.create_file(name, b"S")
+            manifest.append(f"{hashlib.sha256(b'S').hexdigest()}  {name}\n")
+
+        sums_file = self.create_file("stall_test.txt", "".join(manifest).encode())
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+
+        original_open = Path.open
+        def slow_open(path_obj, *args, **kwargs):
+            if large_name in str(path_obj):
+                time.sleep(0.5)
+            return original_open(path_obj, *args, **kwargs)
+
+        with patch.object(Path, 'open', side_effect=slow_open):
+            code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+
+        output_lines = [l for l in out.splitlines() if "OK" in l]
+        self.assertIn(large_name, output_lines[-1], "Stalled file should finish last.")
+
+    def test_ttfr_responsiveness(self):
+        """Metric: Measure TTFR to ensure small files provide instant UI feedback."""
+        large_data = os.urandom(50 * 1024 * 1024)
+        self.create_file("heavy_loader.bin", large_data)
+        l_hash = hashlib.sha256(large_data).hexdigest()
+
+        manifest = [f"{l_hash}  heavy_loader.bin\n"]
+        for i in range(10):
+            name = f"ui_filler_{i}.bin"
+            self.create_file(name, b"filler")
+            manifest.append(f"{hashlib.sha256(b'filler').hexdigest()}  {name}\n")
+
+        sums_file = self.create_file("ttfr.txt", "".join(manifest).encode())
+        line_data, is_tag, label = shasum.get_input_and_format(str(sums_file))
+
+        start_time = time.perf_counter()
+        code, out, err = self.run_verify(line_data, is_tag, label, "sha256")
+        ttfr = time.perf_counter() - start_time
+
+        print(f"   [Metric] TTFR: {ttfr:.4f}s")
+        self.assertLess(ttfr, 0.2)
 
     def test_hashing_performance(self):
         """Performance: Measure throughput and execution time for 100 MiB."""
