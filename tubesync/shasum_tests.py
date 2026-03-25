@@ -777,6 +777,71 @@ class TestShasum(unittest.TestCase):
         self.assertEqual(combined.count("OK"), 5, "Canary files were blocked by the failure.")
         self.assertEqual(code, 1)
 
+    def test_interleaved_scheduling_priority(self):
+        """Priority: Ensure 256 small files interleave while 1 large hash is stalled."""
+        # 1. Setup: 1 'Large' anchor (2MB) and 256 'Small' filler files (8k-1)
+        # 256 files ensures multiple waves of tasks on an 8-core device.
+        filler_count = 256
+        filler_size = (8 * 1024) - 1
+        self.create_file("heavy_anchor.bin", b"A" * 2 * 1024 * 1024)
+        l_hash = hashlib.sha256(b"A" * 2 * 1024 * 1024).hexdigest()
+
+        manifest = [f"{l_hash}  heavy_anchor.bin\n"]
+        for i in range(filler_count):
+            name = f"filler_{i}.bin"
+            data = b"f" * filler_size
+            self.create_file(name, data)
+            manifest.append(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+
+        line_data, _, label = shasum.get_input_and_format(self.create_file("test_pri.txt", "".join(manifest).encode()))
+
+        # 2. Tracking
+        in_flight_large = 0
+        small_finished_while_large_active = 0
+        counter_lock = threading.Lock()
+        real_new = hashlib.new
+        real_std_base = shasum._std_base
+
+        class PriorityProxy:
+            def __init__(self, real):
+                self.real, self.seen, self.is_large = real, 0, False
+            def update(self, data):
+                nonlocal in_flight_large
+                self.seen += len(data)
+                if not self.is_large and self.seen > 1024 * 1024:
+                    self.is_large = True
+                    with counter_lock:
+                        in_flight_large += 1
+                    time.sleep(0.5) # Stall the heavy hash
+                return self.real.update(data)
+            def hexdigest(self, *args):
+                nonlocal in_flight_large
+                if self.is_large:
+                    with counter_lock:
+                        in_flight_large -= 1
+                return self.real.hexdigest(*args)
+
+        def timed_std_base(*args, **kwargs):
+            nonlocal small_finished_while_large_active
+            output_str = str(args) if args else ""
+            if "filler_" in output_str:
+                with counter_lock:
+                    if in_flight_large > 0:
+                        small_finished_while_large_active += 1
+            return real_std_base(*args, **kwargs)
+
+        # 3. Execution
+        with patch('shasum._std_base', side_effect=timed_std_base):
+            with patch('hashlib.new', side_effect=lambda a, *args, **kwargs: PriorityProxy(real_new(a, *args, **kwargs))):
+                code, out, _ = self.run_verify(line_data, False, label, "sha256")
+
+        # 4. Validation
+        print(f"   [Metric] Small files interleaved: {small_finished_while_large_active}")
+        # With 256 files, we expect the vast majority to finish during the 0.5s stall
+        self.assertGreater(small_finished_while_large_active, 100,
+                           f"Interleaving failed; only {small_finished_while_large_active} files finished while large was active.")
+        self.assertEqual(code, 0)
+
     def test_ttfr_responsiveness(self):
         """Metric: Measure TTFR by capturing the timestamp of the first atomic print."""
         # 1. Setup: 1 Large blocker (2MB) and 256 filler files (8k-1)
