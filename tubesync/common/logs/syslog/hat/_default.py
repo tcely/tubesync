@@ -39,7 +39,7 @@ if not handler:
     # Create only enough for tests to fail instead of creating hard to diagnose errors
     from ..std import default_handler as std_default_handler, handler
     class MockSyslogHandler(handler):
-        def __init__(self, host, port, comm_type, queue_size, reconnect_delay, *args, **kwargs):
+        def __init__(self, host, port, comm_type, queue_size=1024, reconnect_delay=5, *args, **kwargs):
             self.host = host
             self.port = port
             self.comm_type = comm_type

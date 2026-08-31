@@ -1,5 +1,9 @@
 import logging
-from django.conf import settings
+try:
+    from django.conf import settings
+except ImportError:
+    from collections import namedtuple
+    settings = namedtuple('settings', ('DEBUG'), defaults=(False,))
 from .logs import app_logger, default_handler
 ##from .logs.syslog.std import default_handler as syslog_default_handler
 from .logs.syslog.hat import (
