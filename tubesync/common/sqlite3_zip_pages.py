@@ -4,8 +4,6 @@ import zipfile
 
 import apsw
 
-from common.logger import log
-
 
 class ZippedLzmaPagesFile(apsw.VFSFile):
     SIZE_4K = 4096
@@ -25,10 +23,10 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
         self.max_page_seen = 0
         self.dirty_page_names = set()
         self.total_dirty_entries_on_disk = 0
-
         self.page_size = self.SIZE_64K
         self.frozen_page_size = True
         self.import_mode = False
+        self.main_database = True
 
         # Check the SQLite connection string for our custom import flag
         import_param = filename.uri_parameter('import4k')
@@ -37,6 +35,10 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
             self.frozen_page_size = False
             self.import_mode = True
             self._import_listeners.setdefault(self.zip_path, set()).add(self.freeze_geometry)
+
+        if (0 == (apsw.SQLITE_OPEN_MAIN_DB & flags[0])):
+            self.main_database = False
+            return super().__init__('unix-dotfile', filename, flags)
 
         try:
             check_zf = zipfile.ZipFile(**self.zip_config)
@@ -60,10 +62,7 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
 
                         self.max_page_seen = max(self.max_page_seen, int(logical_name, 16))
 
-        log.debug(flags)
-        with contextlib.suppress(apsw.CantOpenError):
-            super().__init__('unix-dotfile', self.zip_path, flags)
-        log.debug(flags)
+        return super().__init__('unix-dotfile', filename, flags)
 
     @staticmethod
     def to_clean_name(page_num: int) -> str:
@@ -204,6 +203,9 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
         self.frozen_page_size = True
 
     def xRead(self, amount: int, offset: int) -> bytes:
+        if not self.main_database:
+            return super().xRead(amount, offset)
+
         page_num = offset // self.page_size
         logical_name = self.to_clean_name(page_num)
         target_name = self.to_dirty_name(logical_name) if logical_name in self.dirty_page_names else logical_name
@@ -220,6 +222,9 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
             return data
 
     def xWrite(self, data: bytes, offset: int) -> None:
+        if not self.main_database:
+            return super().xWrite(data, offset)
+
         # Local page_size variable handles calculations independently for this block write
         page_size = max(self.page_size, len(data))
 
@@ -248,16 +253,36 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
             )
 
     def xDeviceCharacteristics(self) -> int:
+        if not self.main_database:
+            return super().xDeviceCharacteristics()
+
         return 0
 
     def xFileSize(self) -> int:
-        active_size = self.SIZE_64K if self.frozen_page_size else self.SIZE_4K
-        return (self.max_page_seen + 1) * active_size
+        """Returns the size of the file in bytes."""
+        if not self.main_database:
+            return super().xFileSize()
+
+        file_size = os.stat(self.zip_path).st_size
+
+        total_pages = 1 + self.max_page_seen
+        page_size = self.SIZE_64K if self.frozen_page_size else self.SIZE_4K
+        total_pages_size = total_pages * page_size
+
+        return max(file_size, total_pages_size)
+
+    def xTruncate(self, newsize: int) -> None:
+        if not self.main_database:
+            return super().xTruncate(newsize)
+
+        page_size = self.SIZE_64K if self.frozen_page_size else self.SIZE_4K
+        self.max_page_seen = (max(0, newsize) // page_size)
 
     def xClose(self) -> None:
         with contextlib.ExitStack() as stack:
             stack.callback(super().xClose)
-            self._close_zip_archive()
+            if self.main_database:
+                self._close_zip_archive()
 
 
 class ZippedLzmaPagesVFS(apsw.VFS):
