@@ -262,14 +262,15 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
         print(f'reading: {target_name=} {begin=}', flush=True)
         page = io.BytesIO()
         try:
+            page.seek(0, io.SEEK_SET)
             latest_zip_infos = self._latest_by_filename()
-            with page.getbuffer() as page_buffer, \
-                 zipfile.ZipFile(**self.zip_config) as zf, \
+            with zipfile.ZipFile(**self.zip_config) as zf, \
                  zf.open(latest_zip_infos[target_name]) as pf:
-                pf.readinto(page_buffer)
-        except (FileNotFoundError, KeyError):
+                page.write(pf.read())
+        except (FileNotFoundError, KeyError) as e:
             page.seek(0, io.SEEK_SET)
             page.write(b'\x00' * self.page_size)
+            print(f'reading: {e=}', flush=True)
         else:
             if self.frozen_page_size:
                 self.max_page_seen = max(self.max_page_seen, page_num)
@@ -294,18 +295,18 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
         page_num = offset // page_size
         self.max_page_seen = max(self.max_page_seen, page_num)
 
-        logical_name = self.to_clean_name(page_num)
-        dirty_name = self.to_dirty_name(logical_name)
-
-        self.dirty_page_names.add(logical_name)
-        self.total_dirty_entries_on_disk += 1
-
         page = io.BytesIO(
             self.xRead(amount=page_size, offset=page_size*page_num),
         )
         page.seek(offset % page_size, io.SEEK_SET)
         page.write(data)
         page.seek(0, io.SEEK_SET)
+        write_page = page.getvalue()[:offset+len(data)]
+        page.close()
+        print(f'writing: {len(write_page)=}', flush=True)
+
+        logical_name = self.to_clean_name(page_num)
+        dirty_name = self.to_dirty_name(logical_name)
 
         zip_config = {
             **self.zip_config,
@@ -318,9 +319,20 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
 
             zf.writestr(
                 dirty_name,
-                page.getvalue(),
+                write_page,
                 compress_type=zipfile.ZIP_STORED,
             )
+        self._fsync_file(self.zip_path)
+
+        self.dirty_page_names.add(logical_name)
+        self.total_dirty_entries_on_disk += 1
+        page = io.BytesIO(
+            self.xRead(amount=page_size, offset=page_size*page_num),
+        )
+        page.seek(0, io.SEEK_SET)
+        read_page = page.getvalue()
+        page.close()
+        print(f'wrote: {read_page == write_page} {len(read_page)=}', flush=True)
 
     def xDeviceCharacteristics(self) -> int:
         if not self.main_database:
@@ -335,20 +347,24 @@ class ZippedLzmaPagesFile(apsw.VFSFile):
 
         # file_size = os.stat(self.zip_path).st_size
         # total_pages = 1 + self.max_page_seen
+        total_pages_size = None
         try:
             latest_zip_infos = self._latest_by_filename()
         except FileNotFoundError:
             total_pages = self.max_page_seen
         else:
-            total_pages = len({
+            all_pages = {
                 self.restore_logical_name(name)
                 for name in latest_zip_infos
                 if 12 == len(name)
                 and all(c in '0123456789abcdef' for c in name)
-            })
+            }
+            sizes = {n: latest_zip_infos[n].file_size for n in all_pages if n in latest_zip_infos}
+            total_pages = len(all_pages)
+            total_pages_size = sum(sizes.values()) or None
 
         page_size = self.SIZE_64K if self.frozen_page_size else self.SIZE_4K
-        total_pages_size = total_pages * page_size
+        total_pages_size = total_pages * page_size if total_pages_size is None else total_pages_size
 
         # return max(file_size, total_pages_size)
         print(f'in xFileSize: {total_pages_size=}', flush=True)
