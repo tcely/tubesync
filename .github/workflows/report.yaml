@@ -198,21 +198,21 @@ jobs:
                 )"
 
                 signer_id="$( \
-                  awk '
-                    $1 == "[GNUPG:]" &&
-                    (
-                      $2 == "VALIDSIG"   ||
-                      $2 == "GOODSIG"    ||
-                      $2 == "BADSIG"     ||
-                      $2 == "EXPSIG"     ||
-                      $2 == "EXPKEYSIG" ||
-                      $2 == "REVKEYSIG" ||
-                      $2 == "ERRSIG"     ||
-                      $2 == "NO_PUBKEY"
-                    ) { 
-                      print toupper($3);
-                      exit;
-                    }
+                  awk ' \
+                    $1 == "[GNUPG:]" && \
+                    ( \
+                      $2 == "VALIDSIG"   || \
+                      $2 == "GOODSIG"    || \
+                      $2 == "BADSIG"     || \
+                      $2 == "EXPSIG"     || \
+                      $2 == "EXPKEYSIG" || \
+                      $2 == "REVKEYSIG" || \
+                      $2 == "ERRSIG"     || \
+                      $2 == "NO_PUBKEY" \
+                    ) { \
+                      print toupper($3); \
+                      exit; \
+                    } \
                   ' <<< "$signature_output" \
                 )"
 
