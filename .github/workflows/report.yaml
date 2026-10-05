@@ -122,7 +122,7 @@ jobs:
           fi
 
           printf 'Repositories to scan: '
-          wc -l 'target_repos.txt'
+          wc -l 'target_repos.txt' | cut -d ' ' -f 1
 
       - name: Scan commit histories
         shell: bash
@@ -197,7 +197,7 @@ jobs:
                   git -C "$repo_dir" verify-commit --raw "$sha" 2>&1 || true
                 )"
 
-                signer_id="$(
+                signer_id="$( \
                   awk '
                     $1 == "[GNUPG:]" &&
                     (
@@ -209,11 +209,11 @@ jobs:
                       $2 == "REVKEYSIG" ||
                       $2 == "ERRSIG"     ||
                       $2 == "NO_PUBKEY"
-                    ) {
-                      print toupper($3)
-                      exit
+                    ) { 
+                      print toupper($3);
+                      exit;
                     }
-                  ' <<< "$signature_output"
+                  ' <<< "$signature_output" \
                 )"
 
                 [[ -z "$signer_id" ]] && continue
