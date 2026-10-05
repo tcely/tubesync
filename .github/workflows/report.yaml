@@ -2,6 +2,9 @@ name: Global GPG Audit for tcely
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'tcely-audit-commits'
 
 permissions:
   contents: read
