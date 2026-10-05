@@ -12,7 +12,7 @@ jobs:
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GNUPGHOME: ${{ runner.temp }}/gnupg
+      GNUPGHOME: ${{ github.workspace }}/.gnupg
       TARGET_USER: tcely
 
     steps:
@@ -21,9 +21,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          install -d -m 700 "$GNUPGHOME" reports
+          install -d -m 700 "${GNUPGHOME}" reports
 
-          git config --global core.quotePath false
+          git config --global 'core.quotePath' 'false'
 
           printf '%s\n' \
             'Repository,Branch,Commit_SHA,Author,Date,Signer_ID,Signature_Status' \
@@ -44,8 +44,8 @@ jobs:
 
           target_url="$(
             build_url \
-              "https" \
-              "github.com" \
+              'https' \
+              'github.com' \
               "${TARGET_USER}.gpg"
           )"
 
@@ -54,15 +54,15 @@ jobs:
             --silent \
             --show-error \
             --location \
-            --output target_keys.gpg \
+            --output 'target_keys.gpg' \
             "$target_url"
 
-          if [[ ! -s target_keys.gpg ]]; then
-            echo "::error::The public-key file is empty."
+          if [[ ! -s 'target_keys.gpg' ]]; then
+            echo '::error::The public-key file is empty.'
             exit 1
           fi
 
-          gpg --batch --import target_keys.gpg
+          gpg --batch --import 'target_keys.gpg'
 
       - name: Build target key identifiers
         shell: bash
@@ -80,10 +80,10 @@ jobs:
           ' < <(
             gpg --batch --list-keys --with-colons
           ) |
-            sort -u > key_identifiers.txt
+            sort -u > 'key_identifiers.txt'
 
-          if [[ ! -s key_identifiers.txt ]]; then
-            echo "::error::No key identifiers were found."
+          if [[ ! -s 'key_identifiers.txt' ]]; then
+            echo '::error::No key identifiers were found.'
             exit 1
           fi
 
@@ -93,32 +93,33 @@ jobs:
           set -euo pipefail
 
           gh repo list \
-            --limit 1000 \
-            --visibility public \
-            --json nameWithOwner \
+            --limit '1000' \
+            --visibility 'public' \
+            --json 'nameWithOwner' \
             --jq '.[].nameWithOwner' \
-            "$TARGET_USER" \
-            > owned_repos.txt
+            "${TARGET_USER}" \
+            > 'owned_repos.txt'
 
           gh api \
-            --method GET \
+            --method 'GET' \
             --paginate \
             -H 'Accept: application/vnd.github+json' \
             --jq '.items[].repository.full_name' \
             "/search/commits?q=author%3A${TARGET_USER}&per_page=100" \
-            > external_repos.txt
+            > 'external_repos.txt'
 
-          cat owned_repos.txt external_repos.txt |
-            sed '/^[[:space:]]*$/d' |
+          cat 'owned_repos.txt' 'external_repos.txt' |
+            sed -e '/^[[:space:]]*$/d' |
             sort -u \
-            > target_repos.txt
+            > 'target_repos.txt'
 
-          if [[ ! -s target_repos.txt ]]; then
-            echo "::error::No repositories were found."
+          if [[ ! -s 'target_repos.txt' ]]; then
+            echo '::error::No repositories were found.'
             exit 1
           fi
 
-          echo "Repositories to scan: $(wc -l < target_repos.txt)"
+          printf 'Repositories to scan: '
+          wc -l 'target_repos.txt'
 
       - name: Scan commit histories
         shell: bash
@@ -162,8 +163,8 @@ jobs:
 
             clone_url="$(
               build_url \
-                "https" \
-                "github.com" \
+                'https' \
+                'github.com' \
                 "${repo_full_name}.git"
             )"
 
@@ -271,9 +272,9 @@ jobs:
 
           xargs \
             -r \
-            -P 4 \
+            -P 0 \
             -n 1 \
-            bash -c 'scan_repo "$1"' _ \
+            bash -c 'scan_repo "$1"' -- \
             < target_repos.txt
 
       - name: Merge audit reports
