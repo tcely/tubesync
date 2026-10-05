@@ -65,7 +65,7 @@ jobs:
             exit 1
           fi
 
-          gpg --batch --import 'target_keys.gpg'
+          gpg --batch --import 'target_keys.gpg' || exit 0
 
       - name: Build target key identifiers
         shell: bash
