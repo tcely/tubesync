@@ -1,0 +1,311 @@
+name: Global GPG Audit for tcely
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-gpg:
+    runs-on: ubuntu-slim
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GNUPGHOME: ${{ runner.temp }}/gnupg
+      TARGET_USER: tcely
+
+    steps:
+      - name: Initialize environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install -d -m 700 "$GNUPGHOME" reports
+
+          git config --global core.quotePath false
+
+          printf '%s\n' \
+            'Repository,Branch,Commit_SHA,Author,Date,Signer_ID,Signature_Status' \
+            > reports/audit_report.csv
+
+      - name: Fetch and import public keys
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          build_url() {
+            local scheme="$1"
+            local host="$2"
+            local path="$3"
+
+            printf '%s://%s/%s' "$scheme" "$host" "$path"
+          }
+
+          target_url="$(
+            build_url \
+              "https" \
+              "github.com" \
+              "${TARGET_USER}.gpg"
+          )"
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --output target_keys.gpg \
+            "$target_url"
+
+          if [[ ! -s target_keys.gpg ]]; then
+            echo "::error::The public-key file is empty."
+            exit 1
+          fi
+
+          gpg --batch --import target_keys.gpg
+
+      - name: Build target key identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Record both complete fingerprints and their 16-character key IDs.
+          # This includes primary keys and subkeys.
+          awk -F: '
+            $1 == "fpr" {
+              fingerprint = toupper($10)
+              print fingerprint
+              print substr(fingerprint, length(fingerprint) - 15)
+            }
+          ' < <(
+            gpg --batch --list-keys --with-colons
+          ) |
+            sort -u > key_identifiers.txt
+
+          if [[ ! -s key_identifiers.txt ]]; then
+            echo "::error::No key identifiers were found."
+            exit 1
+          fi
+
+      - name: Map contributed repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh repo list \
+            --limit 1000 \
+            --visibility public \
+            --json nameWithOwner \
+            --jq '.[].nameWithOwner' \
+            "$TARGET_USER" \
+            > owned_repos.txt
+
+          gh api \
+            --method GET \
+            --paginate \
+            -H 'Accept: application/vnd.github+json' \
+            --jq '.items[].repository.full_name' \
+            "/search/commits?q=author%3A${TARGET_USER}&per_page=100" \
+            > external_repos.txt
+
+          cat owned_repos.txt external_repos.txt |
+            sed '/^[[:space:]]*$/d' |
+            sort -u \
+            > target_repos.txt
+
+          if [[ ! -s target_repos.txt ]]; then
+            echo "::error::No repositories were found."
+            exit 1
+          fi
+
+          echo "Repositories to scan: $(wc -l < target_repos.txt)"
+
+      - name: Scan commit histories
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          build_url() {
+            local scheme="$1"
+            local host="$2"
+            local path="$3"
+
+            printf '%s://%s/%s' "$scheme" "$host" "$path"
+          }
+
+          scan_repo() {
+            local repo_full_name="$1"
+            local repo_id
+            local repo_dir
+            local raw_rows
+            local report
+            local clone_url
+            local signature_output
+            local signer_id
+            local signer_key_id
+
+            repo_id="$(
+              printf '%s' "$repo_full_name" |
+                sha256sum |
+                cut -c1-16
+            )"
+
+            repo_dir="$(
+              mktemp -d \
+                "$RUNNER_TEMP/gpg-repo-${repo_id}-XXXXXX"
+            )"
+
+            raw_rows="$RUNNER_TEMP/gpg-rows-${repo_id}.tsv"
+            report="reports/${repo_id}.csv"
+
+            : > "$raw_rows"
+
+            clone_url="$(
+              build_url \
+                "https" \
+                "github.com" \
+                "${repo_full_name}.git"
+            )"
+
+            if ! git clone \
+              --bare \
+              --filter=blob:none \
+              --no-tags \
+              --quiet \
+              "$clone_url" \
+              "$repo_dir"; then
+
+              echo "::warning::Unable to clone ${repo_full_name}; skipping."
+              rm -rf "$repo_dir" "$raw_rows"
+              return 0
+            fi
+
+            while IFS= read -r branch; do
+              [[ -z "$branch" ]] && continue
+
+              while IFS=$'\t' read -r sha author date; do
+                [[ -z "$sha" ]] && continue
+
+                # The exit status is intentionally ignored. This command is
+                # being used only to extract signer metadata, not to determine
+                # whether the signature is currently valid or trusted.
+                signature_output="$(
+                  git -C "$repo_dir" verify-commit --raw "$sha" 2>&1 || true
+                )"
+
+                signer_id="$(
+                  awk '
+                    $1 == "[GNUPG:]" &&
+                    (
+                      $2 == "VALIDSIG"   ||
+                      $2 == "GOODSIG"    ||
+                      $2 == "BADSIG"     ||
+                      $2 == "EXPSIG"     ||
+                      $2 == "EXPKEYSIG" ||
+                      $2 == "REVKEYSIG" ||
+                      $2 == "ERRSIG"     ||
+                      $2 == "NO_PUBKEY"
+                    ) {
+                      print toupper($3)
+                      exit
+                    }
+                  ' <<< "$signature_output"
+                )"
+
+                [[ -z "$signer_id" ]] && continue
+
+                # VALIDSIG gives a full fingerprint. Other status records
+                # generally provide a key ID, so compare both forms.
+                signer_key_id="$(
+                  printf '%s\n' "$signer_id" |
+                    awk '{ print substr($0, length($0) - 15) }'
+                )"
+
+                if grep -Fqx "$signer_id" key_identifiers.txt ||
+                   grep -Fqx "$signer_key_id" key_identifiers.txt; then
+
+                  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                    "$repo_full_name" \
+                    "$branch" \
+                    "$sha" \
+                    "$author" \
+                    "$date" \
+                    "$signer_id" \
+                    "Signature Present" \
+                    >> "$raw_rows"
+                fi
+              done < <(
+                git -C "$repo_dir" log \
+                  --format='%H%x09%an%x09%aI' \
+                  "$branch"
+              )
+            done < <(
+              git -C "$repo_dir" for-each-ref \
+                --format='%(refname:strip=2)' \
+                refs/heads
+            )
+
+            python3 - "$raw_rows" "$report" <<'PY'
+          import csv
+          import sys
+
+          source, destination = sys.argv[1:3]
+
+          with open(source, "r", encoding="utf-8", newline="") as src, \
+               open(destination, "w", encoding="utf-8", newline="") as dst:
+              writer = csv.writer(dst)
+
+              for line in src:
+                  fields = line.rstrip("\n").split("\t")
+
+                  if len(fields) == 7:
+                      writer.writerow(fields)
+          PY
+
+            rm -rf "$repo_dir" "$raw_rows"
+          }
+
+          export -f build_url
+          export -f scan_repo
+          export GNUPGHOME
+
+          xargs \
+            -r \
+            -P 4 \
+            -n 1 \
+            bash -c 'scan_repo "$1"' _ \
+            < target_repos.txt
+
+      - name: Merge audit reports
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # "reports" is the find starting path; predicates follow it.
+          find reports \
+            -type f \
+            -name '*.csv' \
+            ! -name 'audit_report.csv' \
+            -print0 |
+            xargs -0 -r cat \
+            >> reports/audit_report.csv
+
+          {
+            head -n 1 reports/audit_report.csv
+            tail -n +2 reports/audit_report.csv | sort -u
+          } > reports/audit_report.deduplicated.csv
+
+          mv \
+            reports/audit_report.deduplicated.csv \
+            reports/audit_report.csv
+
+          echo \
+            "Signature records: $(($(wc -l < reports/audit_report.csv) - 1))"
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpg-signature-audit-report
+          path: reports/audit_report.csv
+          if-no-files-found: error
+          retention-days: 7
